@@ -15,7 +15,10 @@
   <url>https://github.com/lbruand/freetle/tree/master/freetlelib/</url>
   <inceptionYear>2010</inceptionYear>
   <properties>
-    <scala.version>2.11.4</scala.version>
+    <scala.version>2.13.12</scala.version>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
   <dependencies>
@@ -25,9 +28,9 @@
       <version>${scala.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.scala-lang</groupId>
-      <artifactId>scala-xml</artifactId>
-      <version>2.11.0-M4</version>
+      <groupId>org.scala-lang.modules</groupId>
+      <artifactId>scala-xml_2.13</artifactId>
+      <version>2.2.0</version>
     </dependency>
     <dependency>
           <groupId>msv</groupId>
@@ -68,6 +71,12 @@
       <version>0.9.1</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.scalatest</groupId>
+      <artifactId>scalatest_2.13</artifactId>
+      <version>3.2.17</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -75,9 +84,9 @@
     <testSourceDirectory>src/test/scala</testSourceDirectory>
     <plugins>
       <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
-	<version>2.15.2</version>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>4.8.1</version>
         <executions>
           <execution>
             <goals>
@@ -88,35 +97,48 @@
         </executions>
         <configuration>
           <scalaVersion>${scala.version}</scalaVersion>
-          <!--args>
-            <arg>-target:jvm-1.5</arg>
-          </args-->
+          <args>
+            <arg>-deprecation</arg>
+            <arg>-feature</arg>
+            <arg>-language:postfixOps</arg>
+            <arg>-language:implicitConversions</arg>
+            <arg>-Xlint:_</arg>
+            <arg>-Wconf:cat=deprecation:ws,cat=feature:ws,cat=lint:ws</arg>
+          </args>
+          <jvmArgs>
+            <jvmArg>-Xms64m</jvmArg>
+            <jvmArg>-Xmx1024m</jvmArg>
+          </jvmArgs>
         </configuration>
       </plugin>
-      <!-- TODO : We need to modify the surefire plugin conf to show recursion/heap problems quickly.
-      			Reduce the thread stack size.
-      			Reduce the heap size.
-      	   TODO : Add heapdump functionnality.  
-        -->
-    <plugin>
-      <groupId>com.github.github</groupId>
-      <artifactId>site-maven-plugin</artifactId>
-      <version>0.5</version>
-      <configuration>
-	<message>Creating site for ${project.version}</message>
-      </configuration>
-      <executions>
-	<execution>
-	  <goals>
-	    <goal>site</goal>
-	  </goals>
-	  <phase>site</phase>
-	</execution>
-      </executions>
-    </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.12.1</version>
+        <configuration>
+          <release>11</release>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>com.github.github</groupId>
+        <artifactId>site-maven-plugin</artifactId>
+        <version>0.5</version>
+        <configuration>
+	  <message>Creating site for ${project.version}</message>
+        </configuration>
+        <executions>
+	  <execution>
+	    <goals>
+	      <goal>site</goal>
+	    </goals>
+	    <phase>site</phase>
+	  </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-gpg-plugin</artifactId>
+        <version>3.1.0</version>
         <executions>
           <execution>
             <id>sign-artifacts</id>
@@ -127,34 +149,33 @@
           </execution>
         </executions>
       </plugin>
-	<plugin>
-	    <groupId>org.apache.maven.plugins</groupId>
-	    <artifactId>maven-release-plugin</artifactId>
-	    <version>2.5</version>
-	    <executions>
-		<execution>
-		    <id>default</id>
-		    <goals>
-		        <goal>perform</goal>
-		    </goals>
-		    <configuration>
-		        <pomFileName>freetlelib/pom.xml</pomFileName>
-		    </configuration>
-		</execution>
-	    </executions>
-	</plugin>
-	<plugin>
-	  <groupId>org.sonatype.plugins</groupId>
-	  <artifactId>nexus-staging-maven-plugin</artifactId>
-	  <version>1.6.3</version>
-	  <extensions>true</extensions>
-	  <configuration>
-	     <serverId>ossrh</serverId>
-	     <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-	     <autoReleaseAfterClose>true</autoReleaseAfterClose>
-	  </configuration>
-	</plugin>
-
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-release-plugin</artifactId>
+        <version>2.5</version>
+        <executions>
+          <execution>
+            <id>default</id>
+            <goals>
+              <goal>perform</goal>
+            </goals>
+            <configuration>
+              <pomFileName>freetlelib/pom.xml</pomFileName>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.sonatype.plugins</groupId>
+        <artifactId>nexus-staging-maven-plugin</artifactId>
+        <version>1.6.3</version>
+        <extensions>true</extensions>
+        <configuration>
+          <serverId>ossrh</serverId>
+          <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+          <autoReleaseAfterClose>true</autoReleaseAfterClose>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
   <reporting>
