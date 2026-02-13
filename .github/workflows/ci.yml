@@ -24,8 +24,8 @@ jobs:
           java-version: "11"
           cache: maven
 
-      - name: Test freetlelib
-        run: mvn -q -f freetlelib/pom.xml test
+      - name: Build and install freetlelib
+        run: mvn -q -f freetlelib/pom.xml install
 
       - name: Test bootstrapxsd
         run: mvn -q -f bootstrapxsd/pom.xml test

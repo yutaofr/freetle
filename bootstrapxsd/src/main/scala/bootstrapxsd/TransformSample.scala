@@ -40,7 +40,7 @@ class TransformSampleParser extends CPSXMLModel[TransformSampleContext] with CPS
    */
   class TakeSchemaAttributesToContext(matcher : EvStartMatcher) extends TakeAttributesToContext(matcher) {
 
-    def pushToContext(name : QName,
+    override def pushToContext(name : QName,
                       attributes : Map[QName, String],
                       namespaces : Map[String, String],
                       context : TransformSampleContext) : TransformSampleContext = {
@@ -75,12 +75,12 @@ class TransformSampleParser extends CPSXMLModel[TransformSampleContext] with CPS
 
 
   val elementWithAttributeTypeMatcher = new EvStartMatcher(DefaultNamespaceMatcher) {
-    def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean = "element".equals(name.localPart) &&
+    override def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean = "element".equals(name.localPart) &&
         attributes.contains(QName("", "type", ""))
   }
 
   val complexTypeWithAttributeNameMatcher = new EvStartMatcher(DefaultNamespaceMatcher) {
-    def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean = "complexType".equals(name.localPart) &&
+    override def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean = "complexType".equals(name.localPart) &&
         attributes.contains(QName("", "name", ""))
   }
 
