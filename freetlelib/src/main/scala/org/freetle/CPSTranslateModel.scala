@@ -229,13 +229,42 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
    */
   object ResultStreamUtils {
 
+    private final class AutoClosingSourceIterator(source: Source) extends Iterator[Char] {
+      private val delegate = source.iterator
+      private var closed = false
+
+      private def closeSource(): Unit = {
+        if (!closed) {
+          closed = true
+          source.close()
+        }
+      }
+
+      override def hasNext: Boolean = {
+        if (closed) {
+          false
+        } else {
+          val hasMore = delegate.hasNext
+          if (!hasMore) {
+            closeSource()
+          }
+          hasMore
+        }
+      }
+
+      override def next(): Char = {
+        if (!hasNext) throw new NoSuchElementException("No more characters")
+        delegate.next()
+      }
+    }
+
     def convertCharToCPSStream(inputIter : Iterator[Char]) : CPSStream =
         (inputIter map ((x :Char) => (Some(Left(x)), false))).to(LazyList)
     /**
      * Load a XMLResultStream from an InputStream
      */
     def loadXMLResultStream(inputStream : InputStream) : CPSStream =
-        convertCharToCPSStream(Source.fromInputStream(inputStream))
+        convertCharToCPSStream(new AutoClosingSourceIterator(Source.fromInputStream(inputStream)))
 
     /**
      * Load a XMLResultStream from a String.

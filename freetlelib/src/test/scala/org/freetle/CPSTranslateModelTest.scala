@@ -16,7 +16,8 @@
 package org.freetle
 import org.junit._
 import Assert._
-import util.{PrefixMap, EvText, EvElemStart, QName}
+import util.{PrefixMap, EvText}
+import java.io.ByteArrayInputStream
 
 case class CPSTranslateModelTstContext(value : String)
 /**
@@ -24,6 +25,14 @@ case class CPSTranslateModelTstContext(value : String)
  */
 @Test
 class CPSTranslateModelTest extends CPSTranslateModel[CPSTranslateModelTstContext] {
+  private class TrackingInputStream(input: String) extends ByteArrayInputStream(input.getBytes("UTF-8")) {
+    var closed = false
+    override def close(): Unit = {
+      closed = true
+      super.close()
+    }
+  }
+
   @Test
   def testPositiveCase() {
     val takeValueToContext = new TakeResultToContext {
@@ -81,6 +90,16 @@ class CPSTranslateModelTest extends CPSTranslateModel[CPSTranslateModelTstContex
     assertEquals(Stream.Empty, Stream.continually(0).take(0))
     val input = ResultStreamUtils.convertCharToCPSStream("01234567899".toIterator)
     (takeADigit+)(new CFilterIdentity(), new CFilterIdentity())(input, null) foreach (x => assertTrue(x._2))
+  }
+
+  @Test
+  def testLoadXMLResultStreamClosesInputOnExhaustion(): Unit = {
+    val tracked = new TrackingInputStream("abc")
+    val input = ResultStreamUtils.loadXMLResultStream(tracked)
+
+    input.foreach(_ => ())
+
+    assertTrue("input stream should be closed when stream is exhausted", tracked.closed)
   }
 
 }
