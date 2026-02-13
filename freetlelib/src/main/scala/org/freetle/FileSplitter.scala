@@ -39,7 +39,6 @@ trait FileSplitter[Context] extends CPSXMLModel[Context] {
                                writerInput : Option[Writer],
                                context : Context) : Unit = {
 
-    // TODO in the event of an exception the current writer is not closed.
     val transformation = fileMatcher(new CFilterIdentity(), new CFilterIdentity())
     var currentStream = evStream
     var index = occurrence
@@ -50,31 +49,42 @@ trait FileSplitter[Context] extends CPSXMLModel[Context] {
       currentStream = transformation(CPSStreamHelperMethods.turnToTail(currentStream), context)
 
       var read: Boolean = false
+      var xmlStreamWriter : Option[XMLStreamWriter] = None
       try {
         outWriter = Some(writerConstructor(index, outWriter.orNull))
         val outputFactory : WstxOutputFactory = new WstxOutputFactory()
         outputFactory.configureForSpeed()
-        val xmlStreamWriter : XMLStreamWriter = outputFactory.createXMLStreamWriter(outWriter.get)
+        xmlStreamWriter = Some(outputFactory.createXMLStreamWriter(outWriter.get))
         while (!currentStream.isEmpty && currentStream.head._2) {
 
           currentStream.head._1 match {
             case Some(x: XMLEvent) => {
               read = true
-              x.appendTo(xmlStreamWriter)
+              x.appendTo(xmlStreamWriter.get)
             }
             case None => ()
           }
           currentStream = currentStream.tail
         }
         if (read) {
-          xmlStreamWriter.close()
+          xmlStreamWriter.foreach(_.close())
+          xmlStreamWriter = None
         }
         outWriter.foreach(_.flush())
       }
       catch {
         case e : Throwable => {
-          outWriter.foreach(_.close())
+          if (!read || xmlStreamWriter.isEmpty) {
+            outWriter.foreach(_.close())
+          } else {
+            xmlStreamWriter.foreach(_.close())
+          }
           throw e
+        }
+      }
+      finally {
+        if (!read) {
+          outWriter.foreach(_.close())
         }
       }
       carryOnWhileLoop = (!currentStream.isEmpty && read)

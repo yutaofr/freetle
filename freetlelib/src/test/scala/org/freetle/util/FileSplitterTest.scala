@@ -23,6 +23,17 @@ case class FileSplitterContext()
 @Test
 class FileSplitterTest extends CPSXMLModel[FileSplitterContext] with FileSplitter[FileSplitterContext]{
 
+  private class TrackingWriter extends Writer {
+    private val delegate = new StringWriter()
+    var closed = false
+    override def write(cbuf: Array[Char], off: Int, len: Int): Unit = delegate.write(cbuf, off, len)
+    override def flush(): Unit = delegate.flush()
+    override def close(): Unit = {
+      closed = true
+      delegate.close()
+    }
+    override def toString: String = delegate.toString
+  }
 
 
   @Test
@@ -44,6 +55,21 @@ class FileSplitterTest extends CPSXMLModel[FileSplitterContext] with FileSplitte
       new StringWriter()
     }, context = null)
 
+  }
+
+  @Test
+  def closesWriterWhenNoChunkIsRead(): Unit = {
+    val str = "<Document><Other>content</Other></Document>"
+    val inStream = XMLResultStreamUtils.loadXMLResultStream(str).tail
+    val trackingWriter = new TrackingWriter()
+
+    serializeXMLResultStream(
+      inStream,
+      (_: Int, inputWriter: Writer) => Option(inputWriter).getOrElse(trackingWriter),
+      context = null
+    )
+
+    assertTrue("writer should be closed even when read=false", trackingWriter.closed)
   }
 
 }
