@@ -16,6 +16,7 @@
 package org.freetle.meta
 
 import org.freetle.CPSXMLModel
+import scala.language.postfixOps
 
 /**
  * A trait to be added to the model in order to use a meta-processor.

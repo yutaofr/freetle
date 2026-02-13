@@ -20,6 +20,7 @@ import java.io.Writer
 import util.{EvComment, XMLEvent}
 import javax.xml.stream.{XMLStreamWriter, XMLOutputFactory}
 import com.ctc.wstx.stax.WstxOutputFactory
+import scala.language.postfixOps
 
 /**
  * This trait can be used to cut a single stream into multiple files.

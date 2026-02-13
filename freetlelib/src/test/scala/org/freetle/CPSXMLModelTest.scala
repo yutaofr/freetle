@@ -19,7 +19,6 @@ import meta.CPSMeta
 import org.junit._
 import Assert._
 import util._
-import org.apache.log4j.{ConsoleAppender, PatternLayout, BasicConfigurator}
 import java.io.StringReader
 
 case class TstXMLContext(name :String ="name", totalSum : Int = 0, currentSum : Int = 0)
@@ -32,11 +31,6 @@ class CPSXMLModelTest extends CPSXMLModel[TstXMLContext]
                       with CPSMeta[TstXMLContext]
                       with LoggingWithConstructorLocation {
   val info : String = classOf[CPSXMLModelTest].getName
-  val hello : String = {
-    BasicConfigurator.resetConfiguration()
-    BasicConfigurator.configure(new ConsoleAppender(new PatternLayout("%r (%l) [%t] %p %c %x - %m%n")))
-    ""
-  }
 
   @Test
   def testDeepFilter() {

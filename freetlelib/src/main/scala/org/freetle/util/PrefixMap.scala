@@ -15,32 +15,33 @@
 */
 package org.freetle.util
 
-import scala.collection._
+import scala.collection.{immutable, mutable}
 import scala.collection.mutable.Builder
 
 /**
  * The PrefixMap is a prefix dictionary.
  */
 class PrefixMap[T]
-extends mutable.Map[String, T] {
+    extends mutable.AbstractMap[String, T]
+    with mutable.Map[String, T] {
 
-  var suffixes: immutable.Map[Char, PrefixMap[T]] = immutable.Map.empty[Char, PrefixMap[T]]
+  var suffixes: immutable.Map[Char, PrefixMap[T]] = immutable.Map.empty
   var value: Option[T] = None
 
-  def get(s: String): Option[T] =
+  override def get(s: String): Option[T] =
     if (s.isEmpty) value
-    else suffixes get (s(0)) flatMap (_.get(s substring 1))
+    else suffixes.get(s(0)).flatMap(_.get(s.substring(1)))
 
   def withPrefix(s: String): PrefixMap[T] =
     if (s.isEmpty) this
     else {
       val leading = s(0)
-      suffixes get leading match {
+      suffixes.get(leading) match {
         case None =>
           suffixes = suffixes + (leading -> empty)
         case _ =>
       }
-      suffixes(leading) withPrefix (s substring 1)
+      suffixes(leading).withPrefix(s.substring(1))
     }
 
   override def update(s: String, elem: T): Unit = {
@@ -48,24 +49,35 @@ extends mutable.Map[String, T] {
   }
 
   override def remove(s: String): Option[T] =
-    if (s.isEmpty) { val prev = value; value = None; prev }
-    else suffixes get (s(0)) flatMap (_.remove(s substring 1))
+    if (s.isEmpty) {
+      val prev = value
+      value = None
+      prev
+    } else suffixes.get(s(0)).flatMap(_.remove(s.substring(1)))
 
-  def iterator: Iterator[(String, T)] =
+  override def iterator: Iterator[(String, T)] =
     (for (v <- value.iterator) yield ("", v)) ++
-    (for ((chr, m) <- suffixes.iterator;
-          (s, v) <- m.iterator) yield (chr +: s, v))
+      (for {
+        (chr, m) <- suffixes.iterator
+        (s, v) <- m.iterator
+      } yield (chr +: s, v))
 
-  def addOne(kv: (String, T)): this.type = { update(kv._1, kv._2); this }
+  override def addOne(kv: (String, T)): this.type = {
+    update(kv._1, kv._2)
+    this
+  }
 
-  def subtractOne(s: String): this.type = { remove(s); this }
-
-  override def empty: PrefixMap[T] = new PrefixMap[T]
+  override def subtractOne(s: String): this.type = {
+    remove(s)
+    this
+  }
 
   override def clear(): Unit = {
-    suffixes = immutable.Map.empty[Char, PrefixMap[T]]
+    suffixes = immutable.Map.empty
     value = None
   }
+
+  override def empty: PrefixMap[T] = new PrefixMap[T]
 }
 
 object PrefixMap {
@@ -77,15 +89,19 @@ object PrefixMap {
     m
   }
 
-  def newBuilder[T]: Builder[(String, T), PrefixMap[T]] = {
-    val b = new mutable.Builder[(String, T), PrefixMap[T]] {
-      private val map = empty[T]
-      def addOne(elem: (String, T)): this.type = { map.addOne(elem); this }
-      def clear(): Unit = map.clear()
-      def result(): PrefixMap[T] = map
-    }
-    b
-  }
+  def newBuilder[T]: Builder[(String, T), PrefixMap[T]] =
+    new Builder[(String, T), PrefixMap[T]] {
+      private var elems: PrefixMap[T] = PrefixMap.empty[T]
 
-  implicit def canBuildFrom[T]: mutable.Builder[(String, T), PrefixMap[T]] = newBuilder[T]
+      override def addOne(elem: (String, T)): this.type = {
+        elems += elem
+        this
+      }
+
+      override def clear(): Unit = {
+        elems = PrefixMap.empty[T]
+      }
+
+      override def result(): PrefixMap[T] = elems
+    }
 }

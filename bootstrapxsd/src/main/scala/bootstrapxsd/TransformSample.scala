@@ -40,7 +40,10 @@ class TransformSampleParser extends CPSXMLModel[TransformSampleContext] with CPS
    */
   class TakeSchemaAttributesToContext(matcher : EvStartMatcher) extends TakeAttributesToContext(matcher) {
 
-    def pushToContext(name : QName, attributes : Map[QName, String], context : TransformSampleContext) : TransformSampleContext = {
+    def pushToContext(name : QName,
+                      attributes : Map[QName, String],
+                      namespaces : Map[String, String],
+                      context : TransformSampleContext) : TransformSampleContext = {
       var nContext = context 
       val attriName: Option[String] = attributes.get(QName("", "name", ""))
       nContext = attriName match {
@@ -71,13 +74,13 @@ class TransformSampleParser extends CPSXMLModel[TransformSampleContext] with CPS
   def endSchema : ChainedTransformRoot = </("schema")
 
 
-  val elementWithAttributeTypeMatcher = new EvStartMatcher() {
-    def testElem(name : QName, attributes : Map[QName, String]) : Boolean = "element".equals(name.localPart) &&
+  val elementWithAttributeTypeMatcher = new EvStartMatcher(DefaultNamespaceMatcher) {
+    def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean = "element".equals(name.localPart) &&
         attributes.contains(QName("", "type", ""))
   }
 
-  val complexTypeWithAttributeNameMatcher = new EvStartMatcher() {
-    def testElem(name : QName, attributes : Map[QName, String]) : Boolean = "complexType".equals(name.localPart) &&
+  val complexTypeWithAttributeNameMatcher = new EvStartMatcher(DefaultNamespaceMatcher) {
+    def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean = "complexType".equals(name.localPart) &&
         attributes.contains(QName("", "name", ""))
   }
 
@@ -106,7 +109,7 @@ class TransformSampleParser extends CPSXMLModel[TransformSampleContext] with CPS
  */
 class TransformSampleTransformer(val packageName : String, val schemaName : String) extends TransformSampleParser {
 
-  override def startComplexType : ChainedTransformRoot = (new TakeSchemaAttributesToContext(complexTypeWithAttributeNameMatcher)) -> (new DropFilter() ~ new PushFormattedText( context =>
+  override def startComplexType : ChainedTransformRoot = (new TakeSchemaAttributesToContext(complexTypeWithAttributeNameMatcher)) -> (drop ~ new PushFormattedText( context =>
                                                                 "class %s " format (context.name.capitalize))
                                                             )
 
@@ -154,7 +157,10 @@ object TransformSampleMain extends TransformSampleTransformer(packageName = "boo
         def inStream = XMLResultStreamUtils.loadXMLResultStream(input)
         def outStream = transform.transform(new CFilterIdentity(), new CFilterIdentity())(inStream, context)
         val sw = new OutputStreamWriter(output)
-        XMLResultStreamUtils.serializeXMLResultStream(outStream, sw)
+        outStream.foreach {
+          case (Some(event), true) => event.appendWriter(sw)
+          case _ => ()
+        }
         sw.flush
       } finally {
         input.close

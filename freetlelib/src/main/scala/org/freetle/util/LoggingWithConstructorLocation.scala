@@ -15,7 +15,6 @@
 */
 package org.freetle.util
 
-import org.apache.log4j.spi.LocationInfo
 import java.lang.String
 
 
@@ -37,4 +36,3 @@ trait LoggingWithConstructorLocation {
     Logger(this.getClass, info)
   }
 }
-

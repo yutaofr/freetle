@@ -17,6 +17,7 @@ package org.freetle
 
 import collection.mutable.ListBuffer
 import collection.immutable.TreeMap
+import scala.language.postfixOps
 
 
 /**
