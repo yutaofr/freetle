@@ -11,24 +11,11 @@ Freetle is an open source One-pass xml transformation framework.
   </description>
   <inceptionYear>2011</inceptionYear>
   <properties>
-    <scala.version>2.8.1</scala.version>
+    <scala.version>2.13.17</scala.version>
+    <scala.maven.plugin.version>4.9.6</scala.maven.plugin.version>
+    <junit.version>4.13.2</junit.version>
+    <freetle.version>1.2-SNAPSHOT</freetle.version>
   </properties>
-
-  <repositories>
-    <repository>
-      <id>scala-tools.org</id>
-      <name>Scala-Tools Maven2 Repository</name>
-      <url>http://scala-tools.org/repo-releases</url>
-    </repository>
-  </repositories>
-
-  <pluginRepositories>
-    <pluginRepository>
-      <id>scala-tools.org</id>
-      <name>Scala-Tools Maven2 Repository</name>
-      <url>http://scala-tools.org/repo-releases</url>
-    </pluginRepository>
-  </pluginRepositories>
 
   <dependencies>
     <dependency>
@@ -37,32 +24,15 @@ Freetle is an open source One-pass xml transformation framework.
       <version>${scala.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.scala-tools.sbinary</groupId>
-      <artifactId>sbinary_2.8.0</artifactId>
-      <version>0.3.1</version>
-        <exclusions>
-            <exclusion>
-                <groupId>org.scala-lang</groupId>
-                <artifactId>scala-library</artifactId>
-            </exclusion>
-        </exclusions>
-    </dependency>
-    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>4.4</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.specs</groupId>
-      <artifactId>specs</artifactId>
-      <version>1.2.5</version>
+      <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.freetle</groupId>
       <artifactId>freetle</artifactId>
-      <version>1.0-SNAPSHOT</version>
+      <version>${freetle.version}</version>
     </dependency>
     <dependency>
       <groupId>net.sf.joost</groupId>
@@ -77,8 +47,9 @@ Freetle is an open source One-pass xml transformation framework.
     <testSourceDirectory>src/test/scala</testSourceDirectory>
     <plugins>
       <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>${scala.maven.plugin.version}</version>
         <executions>
           <execution>
             <goals>
@@ -90,27 +61,8 @@ Freetle is an open source One-pass xml transformation framework.
         <configuration>
           <scalaVersion>${scala.version}</scalaVersion>
           <args>
-            <arg>-target:jvm-1.5</arg>
+            <arg>-language:postfixOps</arg>
           </args>
-        </configuration>
-      </plugin>
-      <!-- TODO Eclipse plugin conf needs to be improved. I cannot run scala application with the scala IDE this way! -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-eclipse-plugin</artifactId>
-        <configuration>
-          <downloadSources>true</downloadSources>
-          <buildcommands>
-            <buildcommand>ch.epfl.lamp.sdt.core.scalabuilder</buildcommand>
-          </buildcommands>
-          <projectnatures>
-            <projectnature>ch.epfl.lamp.sdt.core.scalanature</projectnature>
-			<projectnature>org.eclipse.jdt.core.javanature</projectnature>
-          </projectnatures>
-          <classpathContainers>
-            <classpathContainer>org.eclipse.jdt.launching.JRE_CONTAINER</classpathContainer>
-            <classpathContainer>ch.epfl.lamp.sdt.launching.SCALA_CONTAINER</classpathContainer>
-          </classpathContainers>
         </configuration>
       </plugin>
       <!-- TODO : We need to modify the surefire plugin conf to show recursion/heap problems quickly.
@@ -123,8 +75,9 @@ Freetle is an open source One-pass xml transformation framework.
   <reporting>
     <plugins>
       <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>${scala.maven.plugin.version}</version>
         <configuration>
           <scalaVersion>${scala.version}</scalaVersion>
         </configuration>

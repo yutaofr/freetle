@@ -15,7 +15,14 @@
   <url>https://github.com/lbruand/freetle/tree/master/freetlelib/</url>
   <inceptionYear>2010</inceptionYear>
   <properties>
-    <scala.version>2.11.4</scala.version>
+    <scala.version>2.13.17</scala.version>
+    <scala.binary.version>2.13</scala.binary.version>
+    <scala.maven.plugin.version>4.9.6</scala.maven.plugin.version>
+    <junit.version>4.13.2</junit.version>
+    <slf4j.version>2.0.17</slf4j.version>
+    <woodstox.version>7.1.1</woodstox.version>
+    <stax2-api.version>4.2.2</stax2-api.version>
+    <gpg.skip>true</gpg.skip>
   </properties>
 
   <dependencies>
@@ -25,9 +32,9 @@
       <version>${scala.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.scala-lang</groupId>
-      <artifactId>scala-xml</artifactId>
-      <version>2.11.0-M4</version>
+      <groupId>org.scala-lang.modules</groupId>
+      <artifactId>scala-xml_${scala.binary.version}</artifactId>
+      <version>2.4.0</version>
     </dependency>
     <dependency>
           <groupId>msv</groupId>
@@ -37,29 +44,29 @@
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
-      <version>4.4</version>
+      <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.scala-tools.testing</groupId>
-      <artifactId>specs</artifactId>
-      <version>1.4.3</version>
+      <groupId>com.fasterxml.woodstox</groupId>
+      <artifactId>woodstox-core</artifactId>
+      <version>${woodstox.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>${slf4j.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf4j.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.codehaus.woodstox</groupId>
-      <artifactId>woodstox-core-asl</artifactId>
-      <version>4.0.9</version>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-log4j12</artifactId>
-      <version>1.7.9</version>
-    </dependency>
-    <dependency>
-      <groupId>log4j</groupId>
-      <artifactId>log4j</artifactId>
-      <version>1.2.17</version>
+      <artifactId>stax2-api</artifactId>
+      <version>${stax2-api.version}</version>
     </dependency>
 
     <dependency>
@@ -75,9 +82,9 @@
     <testSourceDirectory>src/test/scala</testSourceDirectory>
     <plugins>
       <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
-	<version>2.15.2</version>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+	<version>${scala.maven.plugin.version}</version>
         <executions>
           <execution>
             <goals>
@@ -88,6 +95,9 @@
         </executions>
         <configuration>
           <scalaVersion>${scala.version}</scalaVersion>
+          <args>
+            <arg>-language:postfixOps</arg>
+          </args>
           <!--args>
             <arg>-target:jvm-1.5</arg>
           </args-->
@@ -98,10 +108,10 @@
       			Reduce the heap size.
       	   TODO : Add heapdump functionnality.  
         -->
-    <plugin>
+      <plugin>
       <groupId>com.github.github</groupId>
       <artifactId>site-maven-plugin</artifactId>
-      <version>0.5</version>
+      <version>0.12</version>
       <configuration>
 	<message>Creating site for ${project.version}</message>
       </configuration>
@@ -117,6 +127,10 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-gpg-plugin</artifactId>
+        <version>3.2.8</version>
+        <configuration>
+          <skip>${gpg.skip}</skip>
+        </configuration>
         <executions>
           <execution>
             <id>sign-artifacts</id>
@@ -130,7 +144,7 @@
 	<plugin>
 	    <groupId>org.apache.maven.plugins</groupId>
 	    <artifactId>maven-release-plugin</artifactId>
-	    <version>2.5</version>
+	    <version>3.3.1</version>
 	    <executions>
 		<execution>
 		    <id>default</id>
@@ -146,7 +160,7 @@
 	<plugin>
 	  <groupId>org.sonatype.plugins</groupId>
 	  <artifactId>nexus-staging-maven-plugin</artifactId>
-	  <version>1.6.3</version>
+	  <version>1.7.0</version>
 	  <extensions>true</extensions>
 	  <configuration>
 	     <serverId>ossrh</serverId>
@@ -160,8 +174,9 @@
   <reporting>
     <plugins>
       <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
+        <groupId>net.alchim31.maven</groupId>
+        <artifactId>scala-maven-plugin</artifactId>
+        <version>${scala.maven.plugin.version}</version>
         <configuration>
           <scalaVersion>${scala.version}</scalaVersion>
         </configuration>

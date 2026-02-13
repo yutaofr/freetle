@@ -15,21 +15,20 @@
 */
 package org.freetle.util
 
-import collection._
-import generic.CanBuildFrom
-import mutable.{MapBuilder, Builder}
+import scala.collection.{immutable, mutable}
+import scala.collection.mutable.Builder
 
 /**
  * The PrefixMap is a prefix dictionnary.
  */
 class PrefixMap[T]
-extends mutable.Map[String, T]
-   with mutable.MapLike[String, T, PrefixMap[T]] {
+    extends mutable.AbstractMap[String, T]
+    with mutable.Map[String, T] {
 
-  var suffixes: immutable.Map[Char, PrefixMap[T]] = Map.empty
+  var suffixes: immutable.Map[Char, PrefixMap[T]] = immutable.Map.empty
   var value: Option[T] = None
 
-  def get(s: String): Option[T] =
+  override def get(s: String): Option[T] =
     if (s.length() == 0) value
     else suffixes get (s(0)) flatMap (_.get(s substring 1))
 
@@ -45,7 +44,7 @@ extends mutable.Map[String, T]
       suffixes(leading) withPrefix (s substring 1)
     }
 
-  override def update(s: String, elem: T) {
+  override def update(s: String, elem: T): Unit = {
     withPrefix(s).value = Some(elem)
   }
 
@@ -53,20 +52,31 @@ extends mutable.Map[String, T]
     if (s.length() == 0) { val prev = value; value = None; prev }
     else suffixes get (s(0)) flatMap (_.remove(s substring 1))
 
-  def iterator: Iterator[(String, T)] =
+  override def iterator: Iterator[(String, T)] =
     (for (v <- value.iterator) yield ("", v)) ++
     (for ((chr, m) <- suffixes.iterator;
           (s, v) <- m.iterator) yield (chr +: s, v))
 
-  def += (kv: (String, T)): this.type = { update(kv._1, kv._2); this }
+  override def addOne(kv: (String, T)): this.type = {
+    update(kv._1, kv._2)
+    this
+  }
 
-  def -= (s: String): this.type  = { remove(s); this }
+  override def subtractOne(s: String): this.type = {
+    remove(s)
+    this
+  }
 
-  override def empty = new PrefixMap[T]
+  override def clear(): Unit = {
+    suffixes = immutable.Map.empty
+    value = None
+  }
+
+  override def empty: PrefixMap[T] = new PrefixMap[T]
 }
 
-object PrefixMap extends {
-  def empty[T] = new PrefixMap[T]
+object PrefixMap {
+  def empty[T]: PrefixMap[T] = new PrefixMap[T]
 
   def apply[T](kvs: (String, T)*): PrefixMap[T] = {
     val m: PrefixMap[T] = empty
@@ -75,12 +85,18 @@ object PrefixMap extends {
   }
 
   def newBuilder[T]: Builder[(String, T), PrefixMap[T]] =
-    new MapBuilder[String, T, PrefixMap[T]](empty)
+    new Builder[(String, T), PrefixMap[T]] {
+      private var elems: PrefixMap[T] = PrefixMap.empty[T]
 
-  implicit def canBuildFrom[T]
-    : CanBuildFrom[PrefixMap[_], (String, T), PrefixMap[T]] =
-      new CanBuildFrom[PrefixMap[_], (String, T), PrefixMap[T]] {
-        def apply(from: PrefixMap[_]) = newBuilder[T]
-        def apply() = newBuilder[T]
+      override def addOne(elem: (String, T)): this.type = {
+        elems += elem
+        this
       }
+
+      override def clear(): Unit = {
+        elems = PrefixMap.empty[T]
+      }
+
+      override def result(): PrefixMap[T] = elems
+    }
 }
