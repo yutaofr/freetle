@@ -124,6 +124,10 @@ Freetle compares very well with [STX/Joost](http://joost.sourceforge.net/).
 
 See the document [Getting Started.](./GETTINGSTARTED.markdown).
 
+# Migration to Scala 2.13+
+
+See [Migration 1.4](./MIGRATION-1.4.markdown) for the `Stream` to `LazyList` transition, null-to-Option APIs, and compatibility test matrix.
+
 # Licensing
 Freetle is licensed under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0) (See attached).
 
