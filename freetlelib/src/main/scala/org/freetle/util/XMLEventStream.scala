@@ -16,11 +16,11 @@
 package org.freetle.util
 import scala.io.Source
 import scala.collection.immutable.LazyList
-import org.codehaus.stax2.{XMLStreamReader2, XMLInputFactory2}
+import org.codehaus.stax2.XMLStreamReader2
 import com.ctc.wstx.stax.WstxInputFactory
 import javax.xml.stream.{XMLStreamReader, XMLStreamConstants}
 import java.lang.String
-import java.io.{File, InputStream, Reader}
+import java.io.{InputStream, Reader}
 import java.net.URL
 import org.codehaus.stax2.validation.{XMLValidationSchema, XMLValidationSchemaFactory}
 import javax.xml.XMLConstants
@@ -44,8 +44,7 @@ class SourceReader(src: Source) extends Reader {
       i - start
   }
   
-  override def close() {
-  }
+  override def close(): Unit = src.close()
   
 }
 
@@ -66,7 +65,8 @@ class IteratorReader(iterator: =>Iterator[Char]) extends Reader {
       i - start
   }
 
-  override def close() {
+  override def close(): Unit = {
+    src = Iterator.empty
   }
 
 }
@@ -94,25 +94,40 @@ object XMLEventStream {
   factory.configureForSpeed()
   factory.getConfig.doCoalesceText(true)
 
+  private def safeClose(closeable: AutoCloseable): Unit = {
+    try {
+      closeable.close()
+    } catch {
+      case _: Throwable => ()
+    }
+  }
 
 }
 /**
  * Transform a Source a XMLEvent Iterator for the purpose of making it a Stream afterward.
  * NB: You can create a stream from this using Stream.fromIterator().
  */
-final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XMLEvent] {
+final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XMLEvent] with AutoCloseable {
 
-
-  val input : XMLStreamReader2 = src match {
-      case in : InputStream => XMLEventStream.factory.createXMLStreamReader(in).asInstanceOf[XMLStreamReader2]
-      case stream : Stream[_] =>
-        XMLEventStream.factory.createXMLStreamReader(new IteratorReader(stream.asInstanceOf[Stream[Char]].iterator)).asInstanceOf[XMLStreamReader2]
-      case stream : LazyList[_] =>
-        XMLEventStream.factory.createXMLStreamReader(new IteratorReader(stream.asInstanceOf[LazyList[Char]].iterator)).asInstanceOf[XMLStreamReader2]
-      case iterator : Iterator[_] =>
-        XMLEventStream.factory.createXMLStreamReader(new IteratorReader(iterator.asInstanceOf[Iterator[Char]])).asInstanceOf[XMLStreamReader2]
-      case src :Source => XMLEventStream.factory.createXMLStreamReader("default.xml", new SourceReader(src)).asInstanceOf[XMLStreamReader2]
+  private val parserAndOwnedCloseables: (XMLStreamReader2, List[AutoCloseable]) = src match {
+    case in : InputStream =>
+      (XMLEventStream.factory.createXMLStreamReader(in).asInstanceOf[XMLStreamReader2], List(in))
+    case stream : LazyList[_] =>
+      val reader = new IteratorReader(stream.asInstanceOf[LazyList[Char]].iterator)
+      (XMLEventStream.factory.createXMLStreamReader(reader).asInstanceOf[XMLStreamReader2], List(reader))
+    case source : Source =>
+      val sourceReader = new SourceReader(source)
+      (XMLEventStream.factory.createXMLStreamReader("default.xml", sourceReader).asInstanceOf[XMLStreamReader2], List(sourceReader))
+    case iterator : Iterator[_] =>
+      val reader = new IteratorReader(iterator.asInstanceOf[Iterator[Char]])
+      (XMLEventStream.factory.createXMLStreamReader(reader).asInstanceOf[XMLStreamReader2], List(reader))
+    case unsupported =>
+      throw new IllegalArgumentException("Unsupported input type for XMLEventStream: " + unsupported.getClass.getName)
   }
+
+  val input : XMLStreamReader2 = parserAndOwnedCloseables._1
+  private val ownedCloseables: List[AutoCloseable] = parserAndOwnedCloseables._2
+
   if (xsdURL != null) {
     val validationFactory = XMLValidationSchemaFactory.newInstance(XMLValidationSchema.SCHEMA_ID_W3C_SCHEMA)
     val xmlSchema: XMLValidationSchema = validationFactory.createSchema(new URL(xsdURL))
@@ -164,6 +179,21 @@ final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XM
 
   private var prefetchedEvent : Option[XMLEvent] = None
   private var exhausted : Boolean = false
+  private var closed : Boolean = false
+
+  override def close(): Unit = synchronized {
+    if (!closed) {
+      closed = true
+      exhausted = true
+      prefetchedEvent = None
+      try {
+        input.close()
+      } catch {
+        case _: Throwable => ()
+      }
+      ownedCloseables.foreach(XMLEventStream.safeClose)
+    }
+  }
 
   private def fetchNextEvent(): Option[XMLEvent] = {
     var event = buildEvent(input)
@@ -173,6 +203,7 @@ final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XM
     }
     if (event.isEmpty) {
       exhausted = true
+      close()
     }
     event
   }
@@ -185,12 +216,15 @@ final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XM
       input.next()
     } else {
       exhausted = true
+      close()
     }
     event
   }
 
   override def hasNext: Boolean = {
-    if (prefetchedEvent.isDefined) {
+    if (closed) {
+      false
+    } else if (prefetchedEvent.isDefined) {
       true
     } else if (exhausted) {
       false
