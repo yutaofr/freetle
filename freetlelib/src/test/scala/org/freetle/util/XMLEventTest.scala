@@ -31,6 +31,14 @@ case class XMLEventTestContext(a:Int)
 @Test
 class XMLEventTest extends CPSXMLModel[XMLEventTestContext] with TestXMLHelperMethods[XMLEventTestContext] {
 
+  private class TrackingInputStream(input: String) extends ByteArrayInputStream(input.getBytes("UTF-8")) {
+    var closed = false
+    override def close(): Unit = {
+      closed = true
+      super.close()
+    }
+  }
+
   @Test
   def testXMLStreamEvent() {
 
@@ -87,5 +95,28 @@ class XMLEventTest extends CPSXMLModel[XMLEventTestContext] with TestXMLHelperMe
     assertEquals(evStream.size, result.size)
     assertEquals(evStream, result)
     
+  }
+
+  @Test
+  def testXMLEventStreamCloseClosesInputStream(): Unit = {
+    val tracked = new TrackingInputStream("<root><a>1</a></root>")
+    val xmlStream = new XMLEventStream(tracked)
+    assertTrue(xmlStream.hasNext)
+
+    xmlStream.close()
+
+    assertTrue("underlying input stream should be closed", tracked.closed)
+    assertFalse("closed event stream should not have next element", xmlStream.hasNext)
+  }
+
+  @Test
+  def testXMLEventStreamAutoClosesOnExhaustion(): Unit = {
+    val tracked = new TrackingInputStream("<root><a>1</a></root>")
+    val xmlStream = new XMLEventStream(tracked)
+    while (xmlStream.hasNext) {
+      xmlStream.next()
+    }
+
+    assertTrue("input stream should be closed when iterator is exhausted", tracked.closed)
   }
 }
