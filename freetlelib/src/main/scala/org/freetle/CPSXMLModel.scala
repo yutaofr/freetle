@@ -21,7 +21,6 @@ import xml._
 import java.lang.String
 import javax.xml.stream.{XMLStreamWriter, XMLOutputFactory}
 import com.ctc.wstx.stax.WstxOutputFactory
-import scala.language.postfixOps
 
 /**
  * This is a streaming Continuation Passing Transformation model.
@@ -84,8 +83,9 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * The deepfilter does return the matching end bracket.
    */
   class DeepFilter extends StatefulSelector[Int] {
-    def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { new DeepFilter() })
-    def conditionToStop(depth: Int) = (depth <= 0)
+    def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { new DeepFilter() })
+    def conditionToStop(depth: Int): Boolean = (depth <= 0)
 
     def accumulate(depth: Int, element: CPSElementOrPositive) : Int = depth + (element match {
       case Some(EvElemStart(_, _, _)) => +1
@@ -93,7 +93,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
       case _ => 0
     })
     
-    def initialState = 1
+    def initialState: Int = 1
   }
 
   /**
@@ -101,8 +101,9 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * The deepfilteruntil does not return the matching end bracket.
    */
   class DeepFilterUntil extends StatefulSelectorUntil[Int] {
-    def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { new DeepFilterUntil() })
-    def conditionToStop(depth: Int) = (depth <= 0)
+    def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { new DeepFilterUntil() })
+    def conditionToStop(depth: Int): Boolean = (depth <= 0)
 
     def accumulate(depth: Int, element: CPSElementOrPositive) : Int = depth + (element match {
       case Some(EvElemStart(_, _, _)) => +1
@@ -110,14 +111,15 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
       case _ => 0
     })
 
-    def initialState = 1
+    def initialState: Int = 1
   }
 
   /**
    * A base class to load text tokens to context.
    */
   abstract class TakeTextToContext extends ContextWritingTransform {
-    def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
     
     @inline def apply(inputStream : CPSStream, context : Context) : (CPSStream, Context) = {
       if (inputStream.isEmpty)
@@ -126,8 +128,8 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
         val sr = CPSStreamHelperMethods.removeWhileEmptyPositive(inputStream)
         (sr.head._1.get) match {
           case EvText(txt) =>
-            (Stream.cons( (sr.head._1, true), sr.tail), pushToContext(txt, context))
-          case _ => (Stream.cons( (None, true), sr), pushToContext("", context))
+            ((sr.head._1, true) #:: sr.tail, pushToContext(txt, context))
+          case _ => ((None, true) #:: sr, pushToContext("", context))
         }
       }
     }
@@ -139,7 +141,8 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * A base class to load attributes values to context.
    */
   abstract class TakeAttributesToContext(matcher : EvStartMatcher) extends ContextWritingTransform {
-    def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
 
     @inline def apply(inputStream : CPSStream, context : Context) : (CPSStream, Context) = {
       if (inputStream.isEmpty)
@@ -150,7 +153,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
         if (matcher(elem)) {
           (elem) match {
             case EvElemStart(name, attributes, namespaces)  =>
-              (Stream.cons( (inputStreamNoEmptyPositive.head._1, true), inputStreamNoEmptyPositive.tail), pushToContext(name, attributes, namespaces, context))
+              ((inputStreamNoEmptyPositive.head._1, true) #:: inputStreamNoEmptyPositive.tail, pushToContext(name, attributes, namespaces, context))
             case _ => (inputStream, context)
           }
         } else {
@@ -178,8 +181,8 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    */
   private object PushNode {
 
-    def serializeXML(nodeSeq : NodeSeq) : Stream[XMLEvent] = {
-      ((nodeSeq map( serializeNodeXML(_))).toStream.flatten)
+    def serializeXML(nodeSeq : NodeSeq) : LazyList[XMLEvent] = {
+      (nodeSeq.map(serializeNodeXML(_))).to(LazyList).flatten
     }
 
     private def createAttributes(element : scala.xml.Elem) : Map[QName, String] = {
@@ -189,7 +192,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
           case u:UnprefixedAttribute => QName(localPart = u.key) -> u.value.mkString
         }))
       } else {
-        null
+        Map.empty
       }
     }
 
@@ -200,21 +203,20 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
         new QName(element.scope.getURI(element.prefix), element.label, element.prefix)
     }
 
-    def serializeNodeXML(node : Node) : Stream[XMLEvent] =
+    def serializeNodeXML(node : Node) : LazyList[XMLEvent] =
       node match {
       case element :  scala.xml.Elem //(prefix, label, attributes, scope, children)
             => {
                   val qName: QName = buildQName(element)
-                  Stream.cons( new EvElemStart(qName,  createAttributes(element)),
-                          Stream.concat(serializeXML(element.child),
-                            Stream(new EvElemEnd(qName))))
+                  new EvElemStart(qName,  createAttributes(element)) #::
+                    (serializeXML(element.child) #::: LazyList(new EvElemEnd(qName)))
                 }
-      case text : scala.xml.Text => Stream(new EvText(text.text))
-      case comment : scala.xml.Comment => Stream(new EvComment(comment.text))
-      case pi : scala.xml.ProcInstr => Stream(new EvProcInstr(pi.target, pi.proctext))
-      case entityRef : scala.xml.EntityRef => Stream(new EvEntityRef(entityRef.entityName))
-      case atom : scala.xml.Atom[Any] => Stream(new EvText(atom.text))
-      case _ => Stream(new EvText("error" + node.getClass)) // TODO Throw exception.
+      case text : scala.xml.Text => LazyList(new EvText(text.text))
+      case comment : scala.xml.Comment => LazyList(new EvComment(comment.text))
+      case pi : scala.xml.ProcInstr => LazyList(new EvProcInstr(pi.target, pi.proctext))
+      case entityRef : scala.xml.EntityRef => LazyList(new EvEntityRef(entityRef.entityName))
+      case atom : scala.xml.Atom[Any] => LazyList(new EvText(atom.text))
+      case _ => LazyList(new EvText("error" + node.getClass)) // TODO Throw exception.
     }
   }
   /**
@@ -224,16 +226,18 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
   class PushNode(nodeSeq: Option[Context] => NodeSeq) extends PushFromContext(
       ((context :Context) => Some(context)) andThen nodeSeq andThen PushNode.serializeXML
   ) {
-    override def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    override def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
   }
 
   /**
    * Push Formatted text from the context down to output stream.
    */
   class PushFormattedText(formatter: Context => String) extends PushFromContext(
-    formatter andThen ((text:String) => Stream(new EvText(text)))
+    formatter andThen ((text:String) => LazyList(new EvText(text)))
   ) {
-    override def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    override def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
   }
 
   /**
@@ -248,16 +252,21 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
       new PushText(text = text)
     }
 
-    def apply(event : XMLEvent) : PushFromContext = new PushFromContext(context => Stream(event))
+    def apply(event : XMLEvent) : PushFromContext = new PushFromContext(context => LazyList(event))
 
-    def apply(events :Stream[XMLEvent]) : PushFromContext = new PushFromContext(context => events)
+    def apply(events :LazyList[XMLEvent]) : PushFromContext = new PushFromContext(context => events)
+
+    @deprecated("Use apply(LazyList[XMLEvent])", "1.4")
+    def apply(events :scala.collection.immutable.Stream[XMLEvent]) : PushFromContext =
+      apply(events.to(LazyList))
   }
 
   /**
    * Output text downstream.
    */
-  class PushText(text: String) extends PushFromContext(x => Stream(new EvText(text))) {
-    override def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+  class PushText(text: String) extends PushFromContext(x => LazyList(new EvText(text))) {
+    override def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
   }
 
   /**
@@ -312,7 +321,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * A matcher that matches EvElemStarts based on their localPart.
    */
   class LocalPartEvStartMatcher(localPart : String)(implicit nameSpaceMatcher :NameSpaceMatcher) extends EvStartMatcher(nameSpaceMatcher) {
-    override def testElem(name: QName, attributes: Map[QName, String], namespaces : Map[String, String]) =
+    override def testElem(name: QName, attributes: Map[QName, String], namespaces : Map[String, String]): Boolean =
           localPart.equals(name.localPart) && nameSpaceMatcher(name)
   }
 
@@ -352,7 +361,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * A matcher that matches EvElemEnds based on their localPart.
    */
   class LocalPartEvEndMatcher(localPart : String)(implicit nameSpaceMatcher :NameSpaceMatcher) extends EvEndMatcher(nameSpaceMatcher) {
-    def testElem(name: QName) = localPart.equals(name.localPart) && nameSpaceMatcher(name)
+    def testElem(name: QName): Boolean = localPart.equals(name.localPart) && nameSpaceMatcher(name)
   }
   /**
    * Shortcut to take a closing tag based on the localpart.
@@ -370,7 +379,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * Shortcut to take text.
    * Can fake a empty text by using the ? cardinality operator.
    */
-  val takeText = (new ElementMatcherTaker(new EvTextTypeMatcher()))?
+  val takeText = new ElementMatcherTaker(new EvTextTypeMatcher()).?
 
   /**
    * Shortcut to take space or comment.
@@ -385,13 +394,17 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
      * converts an iterator of XMLEvent to a negative `CPSStream`.
      */
     def convertToCPSStream(input : Iterator[XMLEvent]) : CPSStream =
-        (input map ((x :XMLEvent) => (Some(x), false))).toStream
+        (input map ((x :XMLEvent) => (Some(x), false))).to(LazyList)
 
     /**
      * Load a XMLResultStream from an InputStream
      */
+    def loadXMLResultStream(inputStream : InputStream, xsdURL : Option[String]) : CPSStream =
+        convertToCPSStream(new XMLEventStream(inputStream, xsdURL.orNull))
+
+    @deprecated("Use loadXMLResultStream(inputStream, Option[String])", "1.4")
     def loadXMLResultStream(inputStream : InputStream, xsdURL : String = null) : CPSStream =
-        convertToCPSStream(new XMLEventStream(inputStream, xsdURL))
+        loadXMLResultStream(inputStream, Option(xsdURL))
 
     /**
      * Load a XMLResultStream from a String.
@@ -402,8 +415,12 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
     /**
      * Load a XMLResultStream from a Stream of char.
      */
-    def loadXMLResultStream(charStream : =>Stream[Char]) : CPSStream =
-        convertToCPSStream(new XMLEventStream(charStream))
+    def loadXMLResultStream(charStream : =>LazyList[Char]) : CPSStream =
+        convertToCPSStream(new XMLEventStream(charStream.iterator))
+
+    @deprecated("Use loadXMLResultStream(LazyList[Char])", "1.4")
+    def loadXMLResultStream(charStream : =>scala.collection.immutable.Stream[Char])(implicit dummy: scala.DummyImplicit) : CPSStream =
+      loadXMLResultStream(charStream.to(LazyList))
 
     val CANNOTPARSE: String = "Could not parse the whole input."
 
@@ -411,7 +428,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
     /**
      * Serialise a XMLResultStream into a XML form.
      */
-    def serializeXMLResultStream(evStream : =>CPSStream, writer : Writer) {
+    def serializeXMLResultStream(evStream : =>CPSStream, writer : Writer) : Unit = {
       val outputFactory : WstxOutputFactory = new WstxOutputFactory()
       outputFactory.configureForSpeed()
       val xmlStreamWriter : XMLStreamWriter = outputFactory.createXMLStreamWriter(writer)
@@ -422,7 +439,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
     /**
      * SerializeXMLResultStreeam
      */
-    def serializeXMLResultStreamToXMLStreamWriter(evStream : =>CPSStream, writer : XMLStreamWriter) {
+    def serializeXMLResultStreamToXMLStreamWriter(evStream : =>CPSStream, writer : XMLStreamWriter) : Unit = {
       evStream foreach (_ match {
                 case (Some(xmlEvent : XMLEvent), true) => xmlEvent.appendTo(writer)
                 case (None, true) => (new EvComment("EmptyPositive")).appendTo(writer)
@@ -443,16 +460,16 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
     def rehydrate(objectInputStream : ObjectInputStream) : CPSStream = {
       val read = objectInputStream.readObject
       if (read != null) {
-        Stream.cons( (Some((read).asInstanceOf[XMLEvent]), false), rehydrate(objectInputStream))
+        (Some((read).asInstanceOf[XMLEvent]), false) #:: rehydrate(objectInputStream)
       } else {
-        Stream.Empty
+        LazyList.empty
       }
     }
 
     /**
      * Serialize to an objectOutputStream serialized/binary XMLEvent.
      */
-    def dehydrate(evStream: CPSStream, dataOut: ObjectOutputStream) {
+    def dehydrate(evStream: CPSStream, dataOut: ObjectOutputStream) : Unit = {
       evStream.foreach(x => {dataOut.writeObject(x._1.get)})
     }
   }

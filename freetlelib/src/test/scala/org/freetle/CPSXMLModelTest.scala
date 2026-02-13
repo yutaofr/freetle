@@ -322,7 +322,7 @@ class CPSXMLModelTest extends CPSXMLModel[TstXMLContext]
       case Some(a) => <hello v="helloA">hello</hello>
       case None => <hello/>
     })
-    val resultS = p.apply(new CFilterIdentity(), new CFilterIdentity())(Stream.empty, new TstXMLContext())
+    val resultS = p.apply(new CFilterIdentity(), new CFilterIdentity())(LazyList.empty, new TstXMLContext())
     assertEquals("helloA", resultS.head._1 match {
       case Some(EvElemStart(name, attrs, namespcs)) => attrs.head._2
       case _ => "error"

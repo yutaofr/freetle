@@ -46,8 +46,8 @@ trait TestXMLHelperMethods[Context] extends CPSXMLModel[Context] with TestHelper
    * Serialize ( not very efficient ).
    */
   def serializeWithResult(x : CPSStream) : String = {
-    val charStream : Stream[Char] = (x map
-            (y => Stream.cons(if (y._2) 'R' else 'T', y._1.getOrElse(new EvComment("EvEmptyPositive")).toStream))).flatten
+    val charStream : LazyList[Char] = (x map
+            (y => (if (y._2) 'R' else 'T') #:: y._1.getOrElse(new EvComment("EvEmptyPositive")).toStream.to(LazyList))).flatten
     charStream.mkString
   }
   final def createStartElem(s : String) = new EvElemStart(new QName(NAMESPACE, s, PREFIX), null)

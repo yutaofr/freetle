@@ -15,6 +15,7 @@
   */
 package org.freetle.util
 import scala.io.Source
+import scala.collection.immutable.LazyList
 import org.codehaus.stax2.{XMLStreamReader2, XMLInputFactory2}
 import com.ctc.wstx.stax.WstxInputFactory
 import javax.xml.stream.{XMLStreamReader, XMLStreamConstants}
@@ -49,18 +50,17 @@ class SourceReader(src: Source) extends Reader {
 }
 
 /**
- * Helper class to read a Source as a Reader.
+ * Helper class to read any char iterator as a Reader.
  */
-class StreamReader(stream: =>Stream[Char]) extends Reader {
-  var src = stream
+class IteratorReader(iterator: =>Iterator[Char]) extends Reader {
+  private var src = iterator
   override def read(arr : Array[Char], start : Int, sz : Int) : Int = {
     var i = start
-    while (!src.isEmpty && i - start < sz) {
-      arr(i) = src.head
-      src = src.tail
+    while (src.hasNext && i - start < sz) {
+      arr(i) = src.next()
       i += 1
     }
-    if (i - start == 0 && src.isEmpty)
+    if (i - start == 0 && !src.hasNext)
       -1
     else
       i - start
@@ -70,6 +70,11 @@ class StreamReader(stream: =>Stream[Char]) extends Reader {
   }
 
 }
+
+/**
+ * Helper class retained for source compatibility with legacy Stream-based callers.
+ */
+class StreamReader(stream: =>Stream[Char]) extends IteratorReader(stream.iterator)
 
 /**
  * Create a Source from a Char Iterator.
@@ -100,7 +105,12 @@ final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XM
 
   val input : XMLStreamReader2 = src match {
       case in : InputStream => XMLEventStream.factory.createXMLStreamReader(in).asInstanceOf[XMLStreamReader2]
-      case stream : Stream[Char] => XMLEventStream.factory.createXMLStreamReader(new StreamReader(stream)).asInstanceOf[XMLStreamReader2]
+      case stream : Stream[_] =>
+        XMLEventStream.factory.createXMLStreamReader(new IteratorReader(stream.asInstanceOf[Stream[Char]].iterator)).asInstanceOf[XMLStreamReader2]
+      case stream : LazyList[_] =>
+        XMLEventStream.factory.createXMLStreamReader(new IteratorReader(stream.asInstanceOf[LazyList[Char]].iterator)).asInstanceOf[XMLStreamReader2]
+      case iterator : Iterator[_] =>
+        XMLEventStream.factory.createXMLStreamReader(new IteratorReader(iterator.asInstanceOf[Iterator[Char]])).asInstanceOf[XMLStreamReader2]
       case src :Source => XMLEventStream.factory.createXMLStreamReader("default.xml", new SourceReader(src)).asInstanceOf[XMLStreamReader2]
   }
   if (xsdURL != null) {
@@ -119,50 +129,74 @@ final class XMLEventStream(src: Any, xsdURL : String = null) extends Iterator[XM
   }
   
   @inline private def buildAttributes(input : XMLStreamReader) : Attributes = {
-    List.range[Int](0, input.getAttributeCount).map(
-      x => (fromJavaQName(input.getAttributeName(x)), input.getAttributeValue(x))
-      ).toMap
+    (0 until input.getAttributeCount).iterator
+      .map(x => (fromJavaQName(input.getAttributeName(x)), input.getAttributeValue(x)))
+      .toMap
   }
   
   @inline private def buildNamespaces(input : XMLStreamReader) : Namespaces = {
-    List.range[Int](0, input.getNamespaceCount).map(
-      x => (if (input.getNamespacePrefix(x) == null)
-              XMLConstants.DEFAULT_NS_PREFIX
-            else input.getNamespacePrefix(x),
-            input.getNamespaceURI(x))
-    ).toMap
+    (0 until input.getNamespaceCount).iterator
+      .map(x => (Option(input.getNamespacePrefix(x)).getOrElse(XMLConstants.DEFAULT_NS_PREFIX), input.getNamespaceURI(x)))
+      .toMap
   }
 
-  @inline private def buildEvent(input:XMLStreamReader) : XMLEvent = {
+  @inline private def buildEvent(input:XMLStreamReader) : Option[XMLEvent] = {
     val eventType = input.getEventType
-	  val event : XMLEvent = eventType match {
-	    case XMLStreamConstants.START_ELEMENT => new EvElemStart(fromJavaQName(input.getName),
-                                                               buildAttributes(input),
-                                                               buildNamespaces(input)
-                                                               )
-      case XMLStreamConstants.END_ELEMENT => new EvElemEnd(fromJavaQName(input.getName))
-      case XMLStreamConstants.CHARACTERS => new EvText(input.getText)
-      case XMLStreamConstants.COMMENT => new EvComment(input.getText)
-      case XMLStreamConstants.PROCESSING_INSTRUCTION => new EvProcInstr(input.getPITarget, input.getPIData)
-      case XMLStreamConstants.START_DOCUMENT => null      
-        // TODO Add start and end document.
-	    case _ => null
-	  }
-    if (event != null) {
-      event.location = input.getLocation
-      event.namespaceContext = input.getNamespaceContext
+		  val event : Option[XMLEvent] = eventType match {
+		    case XMLStreamConstants.START_ELEMENT => Some(new EvElemStart(fromJavaQName(input.getName),
+		                                                                 buildAttributes(input),
+		                                                                 buildNamespaces(input)
+		                                                                 ))
+	      case XMLStreamConstants.END_ELEMENT => Some(new EvElemEnd(fromJavaQName(input.getName)))
+	      case XMLStreamConstants.CHARACTERS => Some(new EvText(input.getText))
+	      case XMLStreamConstants.COMMENT => Some(new EvComment(input.getText))
+	      case XMLStreamConstants.PROCESSING_INSTRUCTION => Some(new EvProcInstr(input.getPITarget, input.getPIData))
+	      case XMLStreamConstants.START_DOCUMENT => None
+	        // TODO Add start and end document.
+		    case _ => None
+		  }
+    event.foreach { e =>
+      e.location = input.getLocation
+      e.namespaceContext = input.getNamespaceContext
     }
     event
   }
-  def next(): XMLEvent = {	  
-	  var event = buildEvent(input)
-    if (event == null) {
-      input.next
+
+  private var prefetchedEvent : Option[XMLEvent] = None
+  private var exhausted : Boolean = false
+
+  private def fetchNextEvent(): Option[XMLEvent] = {
+    var event = buildEvent(input)
+    while (event.isEmpty && input.hasNext) {
+      input.next()
       event = buildEvent(input)
     }
-	  input.next
-	  event
+    if (event.isEmpty) {
+      exhausted = true
+    }
+    event
   }
-  
-  override def hasNext: Boolean = input.hasNext
+
+  def next(): XMLEvent = {
+    if (!hasNext) throw new NoSuchElementException("No more XML events")
+    val event = prefetchedEvent.get
+    prefetchedEvent = None
+    if (input.hasNext) {
+      input.next()
+    } else {
+      exhausted = true
+    }
+    event
+  }
+
+  override def hasNext: Boolean = {
+    if (prefetchedEvent.isDefined) {
+      true
+    } else if (exhausted) {
+      false
+    } else {
+      prefetchedEvent = fetchNextEvent()
+      prefetchedEvent.isDefined
+    }
+  }
 }

@@ -27,8 +27,8 @@ class CPSModelSerializable[Element <: java.io.Serializable, Context] extends CPS
    * Everything is done in-memory.
    */
   class SortOperator(tokenizer : =>ChainedTransformRoot, keyExtractor : =>ChainedTransformRoot) extends BinaryOperator(tokenizer, keyExtractor) {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processBinaryOperator(this, new SortOperator(_, _), tokenizer, keyExtractor)
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processBinaryOperator(this, new SortOperator(_, _), tokenizer, keyExtractor)
     lazy val tokenizerRealized : ChainedTransformRoot = tokenizer
     lazy val keyExtractorRealized : ChainedTransformRoot = keyExtractor
 
@@ -47,14 +47,15 @@ class CPSModelSerializable[Element <: java.io.Serializable, Context] extends CPS
         val successCF = new CFilterIdentityWithContext()
         val result = tokenizerRealized(successCF, failureCF)(currentStream, currentContext)
 
+        result.headOption
         val resTuple = result.span(p => p._2)
         if (failureCF.isApplied) {
-          headPart = Stream.Empty
+          headPart = LazyList.empty
           tailPart = currentStream
         } else {
           headPart = resTuple._1
           tailPart = resTuple._2
-          currentContext = successCF.currentContext.get
+          currentContext = successCF.currentContext.getOrElse(currentContext)
         }
         currentStream = tailPart
         if (!headPart.isEmpty) {
@@ -68,7 +69,7 @@ class CPSModelSerializable[Element <: java.io.Serializable, Context] extends CPS
       val treeMap = TreeMap.empty[String, CPSStream] ++ ((listBuffer map (generator(keyExtractorRealized)(_, context))).toIterator)
 
       // get all values then flatten them into an unique stream.
-      val resultStream = treeMap.values.flatten.toStream append tailPart
+      val resultStream = treeMap.valuesIterator.flatten.to(LazyList) #::: tailPart
       success(resultStream, context)
     }
 

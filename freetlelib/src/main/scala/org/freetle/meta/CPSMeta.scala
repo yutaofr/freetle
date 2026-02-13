@@ -16,7 +16,6 @@
 package org.freetle.meta
 
 import org.freetle.CPSXMLModel
-import scala.language.postfixOps
 
 /**
  * A trait to be added to the model in order to use a meta-processor.
@@ -28,7 +27,7 @@ trait CPSMeta[Context] extends CPSXMLModel[Context] {
       if (th == drop || th == takeText || th.isInstanceOf[TakeTextToContext]) {
         th
       } else {
-        ((takeSpace)*) ~ instantiate()
+        (takeSpace.*) ~ instantiate()
       }
     }
     def processUnaryOperator(th : UnaryOperator, instantiate : InstantiateUnaryOperator, underlying : =>ChainedTransformRoot) : ChainedTransformRoot = {
