@@ -47,6 +47,10 @@ sealed abstract class XMLEvent extends Externalizable {
   def appendTo(serializer : XMLStreamWriter)
 }
 
+private object XMLEventCompat {
+  @inline def orEmpty(value: String): String = if (value == null) "" else value
+}
+
 /**
  * This class represents a qualified name.
  */
@@ -61,9 +65,9 @@ case class QName(var namespaceURI : String = XMLConstants.NULL_NS_URI,
   }
 
   def writeExternal(out: ObjectOutput) {
-    out.writeUTF(this.namespaceURI)
-    out.writeUTF(this.localPart)
-    out.writeUTF(this.prefix)
+    out.writeUTF(XMLEventCompat.orEmpty(this.namespaceURI))
+    out.writeUTF(XMLEventCompat.orEmpty(this.localPart))
+    out.writeUTF(XMLEventCompat.orEmpty(this.prefix))
   }
 }
 
@@ -71,72 +75,86 @@ case class QName(var namespaceURI : String = XMLConstants.NULL_NS_URI,
 @SerialVersionUID(32003)
 case class EvElemStart(var name : QName = null, var attributes : Map[QName, String] = null, var namespaces : Map[String, String] = null) extends XMLEvent {
   final def this() = this(null, null)
+  private def safeName: QName = Option(name).getOrElse(QName(localPart = ""))
+  private def safeAttributes: Map[QName, String] = Option(attributes).getOrElse(Map.empty)
+  private def safeNamespaces: Map[String, String] = Option(namespaces).getOrElse(Map.empty)
+
   private final def buildAttrStringBuffer(sb :Writer)(j : (QName, String)) {
+    val attrName = Option(j._1).getOrElse(QName(localPart = ""))
     sb.append(' ')
-    if (j._1.prefix.length() != 0) {
-      sb.append(j._1.prefix)
+    val prefix = XMLEventCompat.orEmpty(attrName.prefix)
+    if (prefix.length != 0) {
+      sb.append(prefix)
       sb.append(':')
     }
-    sb.append(j._1.localPart)
+    sb.append(XMLEventCompat.orEmpty(attrName.localPart))
     sb.append('=')
     sb.append('"')
-    sb.append(j._2)
+    sb.append(XMLEventCompat.orEmpty(j._2))
     sb.append('"')
   }
 
   private final def buildNamespaceStringBuffer(sb :Writer)(j : (String, String)) {
+    val prefix = XMLEventCompat.orEmpty(j._1)
     sb.append(' ')
     sb.append("xmlns")
-    if (!XMLConstants.DEFAULT_NS_PREFIX.equals(j._1)) {
+    if (!XMLConstants.DEFAULT_NS_PREFIX.equals(prefix)) {
       sb.append(':')
-      sb.append(j._1)
+      sb.append(prefix)
     }
     sb.append('=')
     sb.append('"')
-    sb.append(j._2)
+    sb.append(XMLEventCompat.orEmpty(j._2))
     sb.append('"')
   }
 
   final def appendWriter(sb: Writer) {
+    val currentName = safeName
+    val namePrefix = XMLEventCompat.orEmpty(currentName.prefix)
     sb.append('<')
-    if (name.prefix.length() != 0) {
-      sb.append(name.prefix)
+    if (namePrefix.length != 0) {
+      sb.append(namePrefix)
       sb.append(':')
     }
-    sb.append(name.localPart)
+    sb.append(XMLEventCompat.orEmpty(currentName.localPart))
 
     // Attributes
-    if (attributes != null) {
-      attributes.foreach(
-        buildAttrStringBuffer(sb)
-        )
-    }
+    safeAttributes.foreach(
+      buildAttrStringBuffer(sb)
+    )
 
-    if (namespaces != null) {
-      namespaces.foreach(
-       buildNamespaceStringBuffer(sb)
-      )
-    }
+    safeNamespaces.foreach(
+     buildNamespaceStringBuffer(sb)
+    )
     sb.append('>')
   }
 
   final def appendTo(serializer : XMLStreamWriter) {
-    serializer.writeStartElement(name.prefix, name.localPart, name.namespaceURI)
-    if (attributes != null) {
-      attributes.foreach[Unit](
-        attr => {
-          serializer.writeAttribute(attr._1.prefix, attr._1.namespaceURI, attr._1.localPart, attr._2)
-        })
-    }
-    if (namespaces != null) {
-      namespaces.foreach[Unit](
-        namespace => {
-          if (XMLConstants.DEFAULT_NS_PREFIX.equals(namespace._1))
-            serializer.writeDefaultNamespace(namespace._2)
-          else
-            serializer.writeNamespace(namespace._1, namespace._2)
-        })
-    }
+    val currentName = safeName
+    serializer.writeStartElement(
+      XMLEventCompat.orEmpty(currentName.prefix),
+      XMLEventCompat.orEmpty(currentName.localPart),
+      XMLEventCompat.orEmpty(currentName.namespaceURI)
+    )
+    safeAttributes.foreach[Unit](
+      attr => {
+        val attributeName = Option(attr._1).getOrElse(QName(localPart = ""))
+        serializer.writeAttribute(
+          XMLEventCompat.orEmpty(attributeName.prefix),
+          XMLEventCompat.orEmpty(attributeName.namespaceURI),
+          XMLEventCompat.orEmpty(attributeName.localPart),
+          XMLEventCompat.orEmpty(attr._2)
+        )
+      })
+    safeNamespaces.foreach[Unit](
+      namespace => {
+        val prefix = XMLEventCompat.orEmpty(namespace._1)
+        val uri = XMLEventCompat.orEmpty(namespace._2)
+        if (XMLConstants.DEFAULT_NS_PREFIX.equals(prefix))
+          serializer.writeDefaultNamespace(uri)
+        else
+          serializer.writeNamespace(prefix, uri)
+      })
   }
 
   def readExternal(in: ObjectInput) {
@@ -158,19 +176,20 @@ case class EvElemStart(var name : QName = null, var attributes : Map[QName, Stri
   }
 
   def writeExternal(out: ObjectOutput) {
-    this.name.writeExternal(out)
-    out.writeInt(this.attributes.size)
-    this.attributes.foreach[Unit]( x => {
+    safeName.writeExternal(out)
+    val attrs = safeAttributes
+    out.writeInt(attrs.size)
+    attrs.foreach[Unit]( x => {
       val (attributeName : QName, attributeValue : String) = x
-      attributeName.writeExternal(out)
-      out.writeUTF(attributeValue)
+      Option(attributeName).getOrElse(QName(localPart = "")).writeExternal(out)
+      out.writeUTF(XMLEventCompat.orEmpty(attributeValue))
     })
-    val namespc : Map[String, String]= if (this.namespaces == null) Map.empty else this.namespaces
+    val namespc : Map[String, String]= safeNamespaces
     out.writeInt(namespc.size)
     namespc.foreach[Unit]( x => {
       val (prefix : String, namespaceURI : String) = x
-      out.writeUTF(prefix)
-      out.writeUTF(namespaceURI)
+      out.writeUTF(XMLEventCompat.orEmpty(prefix))
+      out.writeUTF(XMLEventCompat.orEmpty(namespaceURI))
     })
     
   }
@@ -184,13 +203,15 @@ case class EvElemStart(var name : QName = null, var attributes : Map[QName, Stri
 case class EvElemEnd(var name : QName) extends XMLEvent {
   final def this() = this(null)
   final def appendWriter(sb: Writer) {
+    val currentName = Option(name).getOrElse(QName(localPart = ""))
+    val prefix = XMLEventCompat.orEmpty(currentName.prefix)
     sb.append('<')
     sb.append('/')
-    if (name.prefix.length() != 0) {
-      sb.append(name.prefix)
+    if (prefix.length != 0) {
+      sb.append(prefix)
       sb.append(':')
     }
-    sb.append(name.localPart)
+    sb.append(XMLEventCompat.orEmpty(currentName.localPart))
     sb.append('>')
   }
 
@@ -204,7 +225,7 @@ case class EvElemEnd(var name : QName) extends XMLEvent {
   }
 
   def writeExternal(out: ObjectOutput) {
-    this.name.writeExternal(out)
+    Option(this.name).getOrElse(QName(localPart = "")).writeExternal(out)
   }
 }
 /** A text node is encountered */
@@ -212,11 +233,11 @@ case class EvElemEnd(var name : QName) extends XMLEvent {
 case class EvText(var text : String) extends XMLEvent {
   final def this() = this(null)
   final def appendWriter(sb: Writer) {
-    sb.append(text)
+    sb.append(XMLEventCompat.orEmpty(text))
   }
 
   final def appendTo(serializer : XMLStreamWriter) {
-    serializer.writeCharacters(text)
+    serializer.writeCharacters(XMLEventCompat.orEmpty(text))
   }
 
   def readExternal(in: ObjectInput) {
@@ -224,7 +245,7 @@ case class EvText(var text : String) extends XMLEvent {
   }
 
   def writeExternal(out: ObjectOutput) {
-    out.writeUTF(this.text)
+    out.writeUTF(XMLEventCompat.orEmpty(this.text))
   }
 }
 
@@ -234,12 +255,12 @@ case class EvEntityRef(var entity: String) extends XMLEvent {
   final def this() = this(null)
   final def appendWriter(sb: Writer) {
     sb.append('&')
-    sb.append(entity)
+    sb.append(XMLEventCompat.orEmpty(entity))
     sb.append(';')
   }
 
   final def appendTo(serializer : XMLStreamWriter) {
-    serializer.writeEntityRef(entity)
+    serializer.writeEntityRef(XMLEventCompat.orEmpty(entity))
   }
 
   def readExternal(in: ObjectInput) {
@@ -247,7 +268,7 @@ case class EvEntityRef(var entity: String) extends XMLEvent {
   }
 
   def writeExternal(out: ObjectOutput) {
-    out.writeUTF(this.entity)
+    out.writeUTF(XMLEventCompat.orEmpty(this.entity))
   }
 }
 
@@ -258,7 +279,7 @@ case class EvProcInstr(var target: String, var text: String) extends XMLEvent {
   final def appendWriter(sb: Writer) {}
 
   final def appendTo(serializer : XMLStreamWriter) {
-    serializer.writeProcessingInstruction(target, text)
+    serializer.writeProcessingInstruction(XMLEventCompat.orEmpty(target), XMLEventCompat.orEmpty(text))
   }
 
   final def readExternal(in: ObjectInput) {
@@ -267,8 +288,8 @@ case class EvProcInstr(var target: String, var text: String) extends XMLEvent {
   }
 
   final def writeExternal(out: ObjectOutput) {
-    out.writeUTF(this.target)
-    out.writeUTF(this.text)
+    out.writeUTF(XMLEventCompat.orEmpty(this.target))
+    out.writeUTF(XMLEventCompat.orEmpty(this.text))
   }
 }
 
@@ -278,12 +299,12 @@ case class EvComment(var text: String) extends XMLEvent {
   final def this() = this(null)
   final def appendWriter(sb: Writer) {
     sb.append("<!-- ")
-    sb.append(text)
+    sb.append(XMLEventCompat.orEmpty(text))
     sb.append(" -->")
   }
 
   final def appendTo(serializer : XMLStreamWriter) {
-    serializer.writeComment(text)
+    serializer.writeComment(XMLEventCompat.orEmpty(text))
   }
 
   final def readExternal(in: ObjectInput) {
@@ -291,7 +312,6 @@ case class EvComment(var text: String) extends XMLEvent {
   }
 
   final def writeExternal(out: ObjectOutput) {
-    out.writeUTF(this.text)
+    out.writeUTF(XMLEventCompat.orEmpty(this.text))
   }
 }
-

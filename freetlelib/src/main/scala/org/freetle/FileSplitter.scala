@@ -20,7 +20,6 @@ import java.io.Writer
 import util.{EvComment, XMLEvent}
 import javax.xml.stream.{XMLStreamWriter, XMLOutputFactory}
 import com.ctc.wstx.stax.WstxOutputFactory
-import scala.language.postfixOps
 
 /**
  * This trait can be used to cut a single stream into multiple files.
@@ -29,33 +28,33 @@ import scala.language.postfixOps
  */
 
 trait FileSplitter[Context] extends CPSXMLModel[Context] {
-  val fileMatcher : ChainedTransformRoot = (((takeSpace*)  ~ <("File")) -> drop) ~  new DeepFilterUntil() ~
+  val fileMatcher : ChainedTransformRoot = (((takeSpace.*)  ~ <("File")) -> drop) ~  new DeepFilterUntil() ~
                                             (</("File") -> drop )
   /**
    * Serialise a XMLResultStream into a XML form.
    */
   final def serializeXMLResultStream(evStream : =>CPSStream,
                                writerConstructor : (Int, Writer) => Writer,
-                               occurrence : Int = 0,
-                               writerInput : Writer = null,
-                               context : Context) {
+                               occurrence : Int,
+                               writerInput : Option[Writer],
+                               context : Context) : Unit = {
 
     // TODO in the event of an exception the current writer is not closed.
     val transformation = fileMatcher(new CFilterIdentity(), new CFilterIdentity())
     var currentStream = evStream
     var index = occurrence
     var carryOnWhileLoop = true
-    var outWriter : Writer = writerInput
+    var outWriter : Option[Writer] = writerInput
 
     while (carryOnWhileLoop) {
       currentStream = transformation(CPSStreamHelperMethods.turnToTail(currentStream), context)
 
       var read: Boolean = false
       try {
-        outWriter = writerConstructor(index, outWriter)
+        outWriter = Some(writerConstructor(index, outWriter.orNull))
         val outputFactory : WstxOutputFactory = new WstxOutputFactory()
         outputFactory.configureForSpeed()
-        val xmlStreamWriter : XMLStreamWriter = outputFactory.createXMLStreamWriter(outWriter)
+        val xmlStreamWriter : XMLStreamWriter = outputFactory.createXMLStreamWriter(outWriter.get)
         while (!currentStream.isEmpty && currentStream.head._2) {
 
           currentStream.head._1 match {
@@ -70,13 +69,11 @@ trait FileSplitter[Context] extends CPSXMLModel[Context] {
         if (read) {
           xmlStreamWriter.close()
         }
-        outWriter.flush()
+        outWriter.foreach(_.flush())
       }
       catch {
         case e : Throwable => {
-          if (outWriter != null) {
-            outWriter.close()
-          }
+          outWriter.foreach(_.close())
           throw e
         }
       }
@@ -89,4 +86,12 @@ trait FileSplitter[Context] extends CPSXMLModel[Context] {
 
 
   }
+
+  @deprecated("Use serializeXMLResultStream(..., writerInput = Option[Writer], context)", "1.4")
+  final def serializeXMLResultStream(evStream : =>CPSStream,
+                               writerConstructor : (Int, Writer) => Writer,
+                               occurrence : Int = 0,
+                               writerInput : Writer = null,
+                               context : Context) : Unit =
+    serializeXMLResultStream(evStream, writerConstructor, occurrence, Option(writerInput), context)
 }

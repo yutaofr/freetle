@@ -17,7 +17,6 @@ package org.freetle
 
 import collection.mutable.ListBuffer
 import collection.immutable.TreeMap
-import scala.language.postfixOps
 
 
 /**
@@ -38,7 +37,20 @@ trait CPSModelTypeDefinition[@specialized Element, @specialized Context] {
    *  * At a certain rank the stream, all elements are tail (i.e. _2 == false)
    *  * Before that certain rank, all elements are results (there can possibly be no result at all)
    */
-  type CPSStream = Stream[CPSTupleElement]
+  type CPSStream = LazyList[CPSTupleElement]
+
+  /**
+   * Legacy stream aliases kept while migrating internals to LazyList.
+   */
+  type LegacyStream[+A] = scala.collection.immutable.Stream[A]
+
+  @deprecated("Use LazyList directly", "1.4")
+  implicit def legacyStreamToLazyList[A](stream: LegacyStream[A]): LazyList[A] =
+    stream.to(LazyList)
+
+  @deprecated("Use LazyList directly", "1.4")
+  implicit def lazyListToLegacyStream[A](stream: LazyList[A]): LegacyStream[A] =
+    stream.toStream
 
   /**
    * CFilter type is the basic type of transformations in Freetle.
@@ -82,7 +94,7 @@ trait CPSModelHelperExtension[@specialized Element, @specialized Context] extend
      */
     def removeAllEmptyPositive(inputStream : CPSStream) : CPSStream = {
       val (result, leftover) = inputStream.span(_._2)
-      result.filter(isNotEmptyPositive).append(leftover)
+      result.filter(isNotEmptyPositive) #::: leftover
     }
 
     /**
@@ -110,7 +122,7 @@ trait CPSModelHelperExtension[@specialized Element, @specialized Context] extend
      * ahead.
      */
     @inline def appendPositiveStream(inputStream : CPSStream) : CPSStream = if (!isPositive(inputStream))
-                                                                          Stream.cons(CPSStreamHelperMethods.constantEmptyPositive, inputStream)
+                                                                          CPSStreamHelperMethods.constantEmptyPositive #:: inputStream
                                                                         else
                                                                           inputStream
 
@@ -339,8 +351,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * Executes in sequence the left operand and then the right operand if left operand has returned a result.
    */
   final class SequenceOperator(left : =>ChainedTransformRoot, right : =>ChainedTransformRoot) extends BinaryOperator(left, right) {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processBinaryOperator(this, new SequenceOperator(_, _), left, right)
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processBinaryOperator(this, new SequenceOperator(_, _), left, right)
     lazy val leftRealized : ChainedTransformRoot = left
     lazy val rightRealized : ChainedTransformRoot = right
 
@@ -359,7 +371,7 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
           if (inputStream.head._2) { // It is Result.
             inputStream.head._1 match {
               case None => this(inputStream.tail, context) // Empty positive to trim.
-              case Some(_) => Stream.cons(inputStream.head, this(inputStream.tail, context)) // Non empty positive to skip.
+              case Some(_) => inputStream.head #:: this(inputStream.tail, context) // Non empty positive to skip.
             }
           } else {
             continuationFilter(inputStream, context)
@@ -391,11 +403,11 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    */
 
   final class ComposeOperator(left : =>ChainedTransformRoot, right : =>ChainedTransformRoot) extends BinaryOperator(left, right) {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processBinaryOperator(this, new ComposeOperator(_, _), left, right)
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processBinaryOperator(this, new ComposeOperator(_, _), left, right)
     lazy val leftRealized : ChainedTransformRoot = left
     lazy val rightRealized : ChainedTransformRoot = right
-    @inline private def forceStream(result: CPSStream, identitySuccess: CFilterIdentityWithContext, identityFailure: CFilterIdentityWithContext) {
+    @inline private def forceStream(result: CPSStream, identitySuccess: CFilterIdentityWithContext, identityFailure: CFilterIdentityWithContext) : Unit = {
       var these = result
       while (!identitySuccess.isApplied && !identityFailure.isApplied && !these.tail.isEmpty) these = these.tail
     }
@@ -431,7 +443,7 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    */
 
   final class ContextFreeComposeOperator(left : =>ChainedTransformRoot, right : =>ChainedTransformRoot) extends BinaryOperator(left, right) {
-    def metaProcess(metaProcessor : MetaProcessor) =
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
       metaProcessor.processBinaryOperator(this, new ComposeOperator(_, _), left, right)
     lazy val leftRealized : ChainedTransformRoot = left
     lazy val rightRealized : ChainedTransformRoot = right
@@ -449,8 +461,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * Choice Operator
    */
   final class ChoiceOperator(left : =>ChainedTransformRoot, right : =>ChainedTransformRoot) extends BinaryOperator(left, right) {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processBinaryOperator(this, new ChoiceOperator(_, _), left, right)
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processBinaryOperator(this, new ChoiceOperator(_, _), left, right)
     lazy val leftRealized : ChainedTransformRoot = left
     lazy val rightRealized : ChainedTransformRoot = right
     def apply(success : =>CFilter, failure : =>CFilter) : CFilter = leftRealized({
@@ -479,8 +491,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * Apply repeatedly as many times as possible but at least once the __underlying transform__.
    */
   class OneOrMoreOperator(underlying : =>ChainedTransformRoot) extends CardinalityOperator(underlying) {
-    final def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processUnaryOperator(this, new OneOrMoreOperator(_), underlying)
+    final def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processUnaryOperator(this, new OneOrMoreOperator(_), underlying)
     lazy val underlyingRealized : ChainedTransformRoot = underlying
     lazy val seqOneOrMoreOperator : ChainedTransformRoot = new SequenceOperator(underlyingRealized, new ZeroOrMoreOperator(underlying))
     def apply(success : =>CFilter, failure : =>CFilter) : CFilter = {
@@ -492,8 +504,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * Apply at most once the underlying transform.
    */
   final class ZeroOrOneOperator(underlying : =>ChainedTransformRoot) extends CardinalityOperator(underlying) {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processUnaryOperator(this, new ZeroOrOneOperator(_), underlying)
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processUnaryOperator(this, new ZeroOrOneOperator(_), underlying)
     lazy val underlyingRealized : ChainedTransformRoot = underlying
     def apply(success : =>CFilter, failure : =>CFilter) : CFilter = {
       underlyingRealized(success, CPSStreamHelperMethods.appendPositive(success))
@@ -505,8 +517,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * Apply repeatedly as many times as possible the __underlying transform__.
    */
   final class ZeroOrMoreOperator(underlying : =>ChainedTransformRoot) extends CardinalityOperator(underlying) {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processUnaryOperator(this, new ZeroOrMoreOperator(_), underlying)
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processUnaryOperator(this, new ZeroOrMoreOperator(_), underlying)
     lazy val underlyingRealized : ChainedTransformRoot = underlying
     lazy val sequenceOperator = new SequenceOperator(underlyingRealized, this)
     def apply(success : =>CFilter, failure : =>CFilter) : CFilter = {
@@ -521,12 +533,12 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
   def repeat(transform : ChainedTransformRoot, minOccurs : Int, maxOccurs : Int = -1) : ChainedTransformRoot = {
 
 
-    val constStream = Stream.continually(transform).take(minOccurs)
+    val constStream = LazyList.continually(transform).take(minOccurs)
 
     val optionalLength= maxOccurs - minOccurs
 
     val allStream = if (optionalLength > 0)
-                      constStream.append(Stream.continually(transform?).take(optionalLength))
+                      constStream #::: LazyList.continually(transform?).take(optionalLength)
                     else
                       constStream
 
@@ -570,8 +582,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * A Context-free transform that matches elements.
    */
   final class ElementMatcherTaker(matcher : CPSElemMatcher)  extends ContextFreeTransform {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processTransform(this, () => { new ElementMatcherTaker(matcher) })
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { new ElementMatcherTaker(matcher) })
     
     @inline def partialapply(inputStream : CPSStream) : CPSStream = {
       if (inputStream.isEmpty)
@@ -579,7 +591,7 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
       else {
         val streamNoEmptyPositive = CPSStreamHelperMethods.removeWhileEmptyPositive(inputStream)
         if (matcher(streamNoEmptyPositive.head._1.get))
-          Stream.cons( (streamNoEmptyPositive.head._1, true), streamNoEmptyPositive.tail)
+          (streamNoEmptyPositive.head._1, true) #:: streamNoEmptyPositive.tail
         else
           inputStream
       }
@@ -591,8 +603,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
    * It adds a EmptyPositive result if there was something to drop.
    */
   object drop extends ContextFreeTransform {
-    def metaProcess(metaProcessor : MetaProcessor) =
-              metaProcessor.processTransform(this, () => { this })
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
     
     def partialapply(inputStream : CPSStream) : CPSStream = {
       if (CPSStreamHelperMethods.isPositive(inputStream))
@@ -619,13 +631,13 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
   abstract class StatefulSelector[State] extends AbstractStatefulSelector[State] {
     final def recurse(inputStream : CPSStream, currentState : State) : CPSStream = {
       if (inputStream.isEmpty)
-        Stream.empty
+        LazyList.empty
       else
       if (conditionToStop(currentState)) {
         inputStream
       } else
-        Stream.cons( (inputStream.head._1, true),
-                    recurse(inputStream.tail, accumulate(currentState, inputStream.head._1)))
+        (inputStream.head._1, true) #::
+                    recurse(inputStream.tail, accumulate(currentState, inputStream.head._1))
     }
   }
 
@@ -635,7 +647,7 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
   abstract class StatefulSelectorUntil[State] extends AbstractStatefulSelector[State] {
     final def recurse(inputStream : CPSStream, currentState : State) : CPSStream = {
       if (inputStream.isEmpty)
-        Stream.empty
+        LazyList.empty
       else
         if (conditionToStop(currentState))
           inputStream
@@ -644,8 +656,8 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
           if (conditionToStop(computedState))
                inputStream
           else
-               Stream.cons( (inputStream.head._1, true),
-                      recurse(inputStream.tail, computedState))
+               (inputStream.head._1, true) #::
+                      recurse(inputStream.tail, computedState)
 
         }
     }
@@ -654,11 +666,12 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
   /**
    * Base class to push from context.
    */
-  class PushFromContext(val generator : Context => Stream[Element]) extends ContextReadingTransform {
-    def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+  class PushFromContext(val generator : Context => LazyList[Element]) extends ContextReadingTransform {
+    def metaProcess(metaProcessor: MetaProcessor) : ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
     def partialapply(inputStream : CPSStream, context : Context) : CPSStream = {
 
-        CPSStreamHelperMethods.appendPositiveStream((generator(context) map ( x => (Some(x), true)))).append(inputStream)
+        CPSStreamHelperMethods.appendPositiveStream((generator(context) map ( x => (Some(x), true)))) #::: inputStream
       }
   }
 
@@ -672,7 +685,7 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
   class SortOperator(tokenizer : =>ChainedTransformRoot, keyExtractor : =>ChainedTransformRoot)
                                                 extends BinaryOperator(tokenizer, keyExtractor) {
 
-    def metaProcess(metaProcessor : MetaProcessor) =
+    def metaProcess(metaProcessor : MetaProcessor) : ChainedTransformRoot =
       metaProcessor.processBinaryOperator(this, new SortOperator(_, _), tokenizer, keyExtractor)
 
     lazy val tokenizerRealized : ChainedTransformRoot = tokenizer
@@ -693,14 +706,15 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
         val successCF = new CFilterIdentityWithContext()
         val result = tokenizerRealized(successCF, failureCF)(currentStream, currentContext)
 
+        result.headOption
         val resultTuple = result.span(p => p._2)
         if (failureCF.isApplied) {
-          headPart = Stream.Empty
+          headPart = LazyList.empty
           tailPart = currentStream
         } else {
           headPart = resultTuple._1
           tailPart = resultTuple._2
-          currentContext = successCF.currentContext.get
+          currentContext = successCF.currentContext.getOrElse(currentContext)
         }
         currentStream = tailPart
         if (!headPart.isEmpty) {
@@ -714,7 +728,7 @@ class CPSModel[@specialized Element, @specialized Context] extends CPSModelHelpe
       val treeMap = TreeMap.empty[String, CPSStream] ++ ((listBuffer map (generator(keyExtractorRealized)(_, context))).toIterator)
 
       // get all values then flatten them into an unique stream.
-      val resultStream = treeMap.values.flatten.toStream append tailPart
+      val resultStream = treeMap.valuesIterator.flatten.to(LazyList) #::: tailPart
       success(resultStream, context)
     }
 

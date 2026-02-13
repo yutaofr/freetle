@@ -23,7 +23,7 @@ import javax.xml.stream.{XMLOutputFactory, XMLStreamWriter}
 
 
 /**
- * This model can be extended to transform a Stream[Char] towards a Stream[XMLEvent]
+ * This model can be extended to transform a LazyList[Char] towards a LazyList[XMLEvent]
  */
 class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Context] {
 
@@ -104,7 +104,8 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
    * A base class to load text tokens to context.
    */
   abstract class TakeResultToContext extends ContextWritingTransform {
-    def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
 
     @inline def apply(inputStream : CPSStream, context : Context) : (CPSStream, Context) = {
       if (inputStream.isEmpty)
@@ -136,26 +137,36 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
       new PushText(text = text)
     }
 
-    def apply(event : XMLEvent) : PushFromContext = new PushFromContext(c => Stream(Right(event)))
+    def apply(event : XMLEvent) : PushFromContext = new PushFromContext(c => LazyList(Right(event)))
 
-    def apply(events :Stream[XMLEvent]) : PushFromContext = new PushFromContext(c => (events map (Right(_))))
+    def apply(events :LazyList[XMLEvent]) : PushFromContext = new PushFromContext(c => (events map (Right(_))))
 
-    def apply(events :Context => Stream[XMLEvent]) : PushFromContext = new PushFromContext(c => (events(c) map (Right(_))))
+    def apply(events :Context => LazyList[XMLEvent]) : PushFromContext = new PushFromContext(c => (events(c) map (Right(_))))
+
+    @deprecated("Use apply(LazyList[XMLEvent])", "1.4")
+    def apply(events :scala.collection.immutable.Stream[XMLEvent]) : PushFromContext =
+      apply(events.to(LazyList))
+
+    @deprecated("Use apply(Context => LazyList[XMLEvent])", "1.4")
+    def apply(events :Context => scala.collection.immutable.Stream[XMLEvent])(implicit dummy: scala.DummyImplicit) : PushFromContext =
+      apply((c: Context) => events(c).to(LazyList))
   }
 
   /**
    * Push Formatted text from the context down to output stream.
    */
   class PushFormattedText(formatter: Context => String) extends PushFromContext(
-    formatter andThen ((x:String) => Stream(Right(new EvText(x))))
+    formatter andThen ((x:String) => LazyList(Right(new EvText(x))))
   ) {
-    override def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    override def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
   }
   /**
    * Output text downstream.
    */
-  class PushText(text: String) extends PushFromContext(x => Stream(Right(new EvText(text)))) {
-    override def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+  class PushText(text: String) extends PushFromContext(x => LazyList(Right(new EvText(text)))) {
+    override def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
   }
 
     /**
@@ -164,8 +175,8 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
    */
   private object PushNode {
 
-    def serializeXML(nodeSeq : NodeSeq) : Stream[Either[Char,  XMLEvent]] = {
-      ((nodeSeq map( serializeNodeXML(_))).toStream.flatten)
+    def serializeXML(nodeSeq : NodeSeq) : LazyList[Either[Char,  XMLEvent]] = {
+      (nodeSeq.map(serializeNodeXML(_))).to(LazyList).flatten
     }
 
     private def createAttributes(element : scala.xml.Elem) : Map[QName, String] = {
@@ -175,7 +186,7 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
           case u:UnprefixedAttribute => QName(localPart = u.key) -> u.value.mkString
         }))
       } else {
-        null
+        Map.empty
       }
     }
 
@@ -186,21 +197,20 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
         new QName(elem.scope.getURI(elem.prefix), elem.label, elem.prefix)
     }
 
-    def serializeNodeXML(node : Node) : Stream[Either[Char,  XMLEvent]] =
+    def serializeNodeXML(node : Node) : LazyList[Either[Char,  XMLEvent]] =
       node match {
       case elem :  scala.xml.Elem //(prefix, label, attributes, scope, children)
             => {
                   val qName: QName = buildQName(elem)
-                  Stream.cons(Right(new EvElemStart(qName,  createAttributes(elem))),
-                          Stream.concat(serializeXML(elem.child),
-                            Stream(Right(new EvElemEnd(qName)))))
+                  Right(new EvElemStart(qName,  createAttributes(elem))) #::
+                    (serializeXML(elem.child) #::: LazyList(Right(new EvElemEnd(qName))))
                 }
-      case text : scala.xml.Text => Stream(Right(new EvText(text.text)))
-      case comment : scala.xml.Comment => Stream(Right(new EvComment(comment.text)))
-      case pi : scala.xml.ProcInstr => Stream(Right(new EvProcInstr(pi.target, pi.proctext)))
-      case entityRef : scala.xml.EntityRef => Stream(Right(new EvEntityRef(entityRef.entityName)))
-      case atom : scala.xml.Atom[Any] => Stream(Right(new EvText(atom.text)))
-      case _ => Stream(Right(new EvText("error" + node.getClass))) // TODO Throw exception.
+      case text : scala.xml.Text => LazyList(Right(new EvText(text.text)))
+      case comment : scala.xml.Comment => LazyList(Right(new EvComment(comment.text)))
+      case pi : scala.xml.ProcInstr => LazyList(Right(new EvProcInstr(pi.target, pi.proctext)))
+      case entityRef : scala.xml.EntityRef => LazyList(Right(new EvEntityRef(entityRef.entityName)))
+      case atom : scala.xml.Atom[Any] => LazyList(Right(new EvText(atom.text)))
+      case _ => LazyList(Right(new EvText("error" + node.getClass))) // TODO Throw exception.
     }
   }
   /**
@@ -210,7 +220,8 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
   class PushNode(nodeSeq: Option[Context] => NodeSeq) extends PushFromContext(
       ((x :Context) => Some(x)) andThen nodeSeq andThen PushNode.serializeXML
   ) {
-    override def metaProcess(metaProcessor: MetaProcessor) = metaProcessor.processTransform(this, () => { this })
+    override def metaProcess(metaProcessor: MetaProcessor): ChainedTransformRoot =
+      metaProcessor.processTransform(this, () => { this })
   }
 
   /**
@@ -219,7 +230,7 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
   object ResultStreamUtils {
 
     def convertCharToCPSStream(inputIter : Iterator[Char]) : CPSStream =
-        (inputIter map ((x :Char) => (Some(Left(x)), false))).toStream
+        (inputIter map ((x :Char) => (Some(Left(x)), false))).to(LazyList)
     /**
      * Load a XMLResultStream from an InputStream
      */
@@ -235,13 +246,17 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
     /**
      * Load a XMLResultStream from a String.
      */
-    def loadXMLResultStream(charStream : =>Stream[Char]) : CPSStream =
+    def loadXMLResultStream(charStream : =>LazyList[Char]) : CPSStream =
         convertCharToCPSStream(charStream.iterator)
+
+    @deprecated("Use loadXMLResultStream(LazyList[Char])", "1.4")
+    def loadXMLResultStream(charStream : =>scala.collection.immutable.Stream[Char])(implicit dummy: scala.DummyImplicit) : CPSStream =
+      loadXMLResultStream(charStream.to(LazyList))
 
     /**
      * Serialise a XMLResultStream into a XML form.
      */
-    def serializeXMLResultStream(evStream : =>CPSStream, writer : Writer) {
+    def serializeXMLResultStream(evStream : =>CPSStream, writer : Writer) : Unit = {
       val output : XMLOutputFactory = XMLOutputFactory.newInstance();
       val xmlStreamWriter : XMLStreamWriter = output.createXMLStreamWriter(writer)
       serializeXMLResultStreamToXMLStreamWriter(evStream, xmlStreamWriter)
@@ -251,7 +266,7 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
     /**
      * SerializeXMLResultStreeam
      */
-    def serializeXMLResultStreamToXMLStreamWriter(evStream : =>CPSStream, writer : XMLStreamWriter) {
+    def serializeXMLResultStreamToXMLStreamWriter(evStream : =>CPSStream, writer : XMLStreamWriter) : Unit = {
       evStream foreach (_ match {
         case (Some(Right(x : XMLEvent)), true) => x.appendTo(writer)
         case (_, false) => throw new ParsingFailure("Could not parse the whole input.")
@@ -265,16 +280,16 @@ class CPSTranslateModel[Context] extends CPSModel[Either[Char, XMLEvent], Contex
     def rehydrate(inputStream : ObjectInputStream) : CPSStream = {
       val read = inputStream.readObject
       if (read != null) {
-        Stream.cons( (Some((read).asInstanceOf[XMLEvent]), false), rehydrate(inputStream))
+        (Some(Right((read).asInstanceOf[XMLEvent])), false) #:: rehydrate(inputStream)
       } else {
-        Stream.Empty
+        LazyList.empty
       }
     }
 
     /**
      * Dehydriate to an objectOutputStream serialized/binary XMLEvent.
      */
-    def dehydrate(evStream: CPSStream, dataOut: ObjectOutputStream) {
+    def dehydrate(evStream: CPSStream, dataOut: ObjectOutputStream) : Unit = {
       evStream.foreach(x => {dataOut.writeObject(x._1.get)})
     }
   }

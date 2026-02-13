@@ -78,7 +78,7 @@ class CPSStreamingVerifyTest extends CPSModel[Char, TstCPSStreamingContext] {
   @Test
   def testChoiceBacktracking() {
     def createStream : CPSStream = {
-      Stream.continually(("aaab".toStream map (x => (Some(x), false)))).take(max).flatten
+      LazyList.continually(("aaab".to(LazyList) map (x => (Some(x), false)))).take(max).flatten
     }
     /*
      This transformation does not recognize the previous stream because this is no backtracking coded in the
@@ -105,7 +105,7 @@ class CPSStreamingVerifyTest extends CPSModel[Char, TstCPSStreamingContext] {
   @Test
   def testChoiceBacktrackingWithAdvanced() {
     def createStream : CPSStream = {
-      Stream.continually(("aaab".toStream map (x => (Some(x), false)))).take(max).flatten
+      LazyList.continually(("aaab".to(LazyList) map (x => (Some(x), false)))).take(max).flatten
     }
     /*
      This transformation does recognize the previous stream because this is no need for backtracking coded in the
@@ -132,7 +132,7 @@ class CPSStreamingVerifyTest extends CPSModel[Char, TstCPSStreamingContext] {
   @Test
   def testChoiceNoBacktracking() {
     def createStream : CPSStream = {
-      Stream.continually(("aaab".toStream map (x => (Some(x), false)))).take(max).flatten
+      LazyList.continually(("aaab".to(LazyList) map (x => (Some(x), false)))).take(max).flatten
     }
 
     val t = (((
