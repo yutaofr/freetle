@@ -19,7 +19,7 @@ import scala.collection.{immutable, mutable}
 import scala.collection.mutable.Builder
 
 /**
- * The PrefixMap is a prefix dictionnary.
+ * The PrefixMap is a prefix dictionary.
  */
 class PrefixMap[T]
     extends mutable.AbstractMap[String, T]
@@ -29,19 +29,19 @@ class PrefixMap[T]
   var value: Option[T] = None
 
   override def get(s: String): Option[T] =
-    if (s.length() == 0) value
-    else suffixes get (s(0)) flatMap (_.get(s substring 1))
+    if (s.isEmpty) value
+    else suffixes.get(s(0)).flatMap(_.get(s.substring(1)))
 
   def withPrefix(s: String): PrefixMap[T] =
-    if (s.length() == 0) this
+    if (s.isEmpty) this
     else {
       val leading = s(0)
-      suffixes get leading match {
+      suffixes.get(leading) match {
         case None =>
           suffixes = suffixes + (leading -> empty)
         case _ =>
       }
-      suffixes(leading) withPrefix (s substring 1)
+      suffixes(leading).withPrefix(s.substring(1))
     }
 
   override def update(s: String, elem: T): Unit = {
@@ -49,13 +49,18 @@ class PrefixMap[T]
   }
 
   override def remove(s: String): Option[T] =
-    if (s.length() == 0) { val prev = value; value = None; prev }
-    else suffixes get (s(0)) flatMap (_.remove(s substring 1))
+    if (s.isEmpty) {
+      val prev = value
+      value = None
+      prev
+    } else suffixes.get(s(0)).flatMap(_.remove(s.substring(1)))
 
   override def iterator: Iterator[(String, T)] =
     (for (v <- value.iterator) yield ("", v)) ++
-    (for ((chr, m) <- suffixes.iterator;
-          (s, v) <- m.iterator) yield (chr +: s, v))
+      (for {
+        (chr, m) <- suffixes.iterator
+        (s, v) <- m.iterator
+      } yield (chr +: s, v))
 
   override def addOne(kv: (String, T)): this.type = {
     update(kv._1, kv._2)
@@ -80,7 +85,7 @@ object PrefixMap {
 
   def apply[T](kvs: (String, T)*): PrefixMap[T] = {
     val m: PrefixMap[T] = empty
-    for (kv <- kvs) m += kv
+    for (kv <- kvs) m.addOne(kv)
     m
   }
 
