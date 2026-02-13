@@ -158,7 +158,18 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
         }
       }
     }
-    def pushToContext(name : QName, attributes : Map[QName, String], namespaces : Map[String, String], context : Context) : Context
+    /**
+     * Namespace-aware context hook (new API).
+     * By default it falls back to the legacy hook for source compatibility.
+     */
+    def pushToContext(name : QName, attributes : Map[QName, String], namespaces : Map[String, String], context : Context) : Context =
+      pushToContext(name, attributes, context)
+
+    /**
+     * Legacy context hook retained for source compatibility.
+     */
+    @deprecated("Use pushToContext(name, attributes, namespaces, context)", "1.3")
+    def pushToContext(name : QName, attributes : Map[QName, String], context : Context) : Context = context
   }
 
   /**
@@ -272,9 +283,17 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    */
   abstract class EvStartMatcher(nameSpaceMatcher :NameSpaceMatcher) extends EvTagMatcher {
     /**
-     * implement this to check whether the Element is the one we are looking for.
+     * Namespace-aware matcher hook (new API).
+     * By default it falls back to the legacy matcher for source compatibility.
      */
-    def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean
+    def testElem(name : QName, attributes : Map[QName, String], namespaces : Map[String, String]) : Boolean =
+      testElem(name, attributes)
+
+    /**
+     * Legacy matcher hook retained for source compatibility.
+     */
+    @deprecated("Use testElem(name, attributes, namespaces)", "1.3")
+    def testElem(name : QName, attributes : Map[QName, String]) : Boolean = false
 
     /**
      * Call the testElem method to check the event.
@@ -293,7 +312,7 @@ class CPSXMLModel[@specialized Context] extends CPSModelSerializable[XMLEvent, C
    * A matcher that matches EvElemStarts based on their localPart.
    */
   class LocalPartEvStartMatcher(localPart : String)(implicit nameSpaceMatcher :NameSpaceMatcher) extends EvStartMatcher(nameSpaceMatcher) {
-    def testElem(name: QName, attributes: Map[QName, String], namespaces : Map[String, String]) =
+    override def testElem(name: QName, attributes: Map[QName, String], namespaces : Map[String, String]) =
           localPart.equals(name.localPart) && nameSpaceMatcher(name)
   }
 
