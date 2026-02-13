@@ -41,3 +41,4 @@ While bringing in major new ideas from the functional programming world :
 
 * [Discover the library itself](./freetlelib/)
 * [Discover A sample transformation](./freetle-sample/)
+* [Read the Scala 2.13 migration guide](./freetlelib/MIGRATION-1.4.markdown)
